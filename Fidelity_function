@@ -1,0 +1,67 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# ----------------------------------------
+# Define F(theta2, eps1, eps2, eps3)
+# ----------------------------------------
+def F(theta2, eps1, eps2, eps3):
+    # Derived quantities
+    eps_tot = eps1 + eps3
+    delta_eps = eps1 - eps3
+
+    # Half angles
+    th2_2 = theta2 / 2
+    t1 = th2_2
+    t2 = th2_2 + eps2
+
+    term1 = (3/4) * np.sin(t1) * np.sin(t2) * np.cos(delta_eps)
+
+    term2 = (
+        (1/4) * np.sin(t1) * np.sin(t2)
+        + np.cos(t1) * np.cos(t2)
+    ) * np.cos(eps_tot)
+
+    term3 = (
+        np.sin(t1) * np.cos(t2)
+        - np.sin(t2) * np.cos(t1)
+    ) * (np.sin(eps_tot) / 2)
+
+    return (term1 + term2 + term3) ** 2
+
+
+# ----------------------------------------
+# 3D surface plot: Z = F(theta2, eps1, eps2, eps3)
+# ----------------------------------------
+def plot_F(theta2, eps2, eps1_range, eps3_range, resolution=200):
+    eps1 = np.linspace(*eps1_range, resolution)
+    eps3 = np.linspace(*eps3_range, resolution)
+    E1, E3 = np.meshgrid(eps1, eps3)
+
+    Z = F(theta2, E1, eps2, E3)
+
+    fig = plt.figure(figsize=(9,6))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_surface(E1, E3, Z)
+
+    ax.set_xlabel("ε₁")
+    ax.set_ylabel("ε₃")
+    ax.set_zlabel("F")
+
+    plt.title(f"F(θ₂={theta2}, ε₂={eps2})")
+    plt.show()
+
+
+# ----------------------------------------
+# Example usage
+# ----------------------------------------
+theta2_value = 0.3     # choose your θ₂
+eps2_value = 0.1       # choose your ε₂
+
+plot_F(
+    theta2=theta2_value,
+    eps2=eps2_value,
+    eps1_range=(-0.5, 0.5),
+    eps3_range=(-0.5, 0.5),
+    resolution=200
+)
