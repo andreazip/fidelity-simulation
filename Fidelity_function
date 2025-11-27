@@ -4,29 +4,71 @@ import matplotlib.pyplot as plt
 # ----------------------------------------
 # Define F(theta2, eps1, eps2, eps3)
 # ----------------------------------------
-def F(theta2, eps1, eps2, eps3):
-    # Derived quantities
-    eps_tot = eps1 + eps3
-    delta_eps = eps1 - eps3
 
-    # Half angles
-    th2_2 = theta2 / 2
-    t1 = th2_2
-    t2 = th2_2 + eps2
+def fidelity_two_rotations(epsilon1, epsilon2):
+    """
+    Compute the fidelity-like function for two rotations around z and n axis.
+    
+    Parameters
+    ----------
+    epsilon1 : float
+        Rotation angle error around z-axis (radians)
+    epsilon2 : float
+        Rotation angle error around axis n (radians)
+    
+    Returns
+    -------
+    float
+        Fidelity
+    """
+    return (np.cos(epsilon2) * np.cos(epsilon1) - 0.5 * np.sin(epsilon2) * np.sin(epsilon1))**2
 
-    term1 = (3/4) * np.sin(t1) * np.sin(t2) * np.cos(delta_eps)
-
-    term2 = (
-        (1/4) * np.sin(t1) * np.sin(t2)
-        + np.cos(t1) * np.cos(t2)
-    ) * np.cos(eps_tot)
-
-    term3 = (
-        np.sin(t1) * np.cos(t2)
-        - np.sin(t2) * np.cos(t1)
-    ) * (np.sin(eps_tot) / 2)
-
-    return (term1 + term2 + term3) ** 2
+def fidelity_two_rotations_simple(epsilon1, epsilon2):
+    """
+    Compute fidelity for two rotations around z and x axis 
+    F = [cos(epsilon2) * cos(epsilon1)]^2
+    
+    Parameters
+    ----------
+    epsilon1 : float
+        Rotation angle error around z-axis (radians)
+    epsilon2 : float
+        Rotation angle error around x-axis (radians)
+    
+    Returns
+    -------
+    float
+        Fidelity
+    """
+    return (np.cos(epsilon1) * np.cos(epsilon2))**2
+    
+def fidelity_general(theta2, epsilon1, epsilon2):
+    """
+    Compute the fidelity function for two rotations with errors.
+    
+    Parameters
+    ----------
+    theta2 : float
+        Rotation angle of the main pulse (radians)
+    epsilon1 : float
+        Error rotation 1 (radians)
+    epsilon2 : float
+        Error rotation 2 (radians)
+    
+    Returns
+    -------
+    float
+        Fidelity
+    """
+    delta_epsilon = epsilon2 - epsilon1
+    epsilon_tot = epsilon2 + epsilon1
+    
+    term1 = (3/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2) * np.cos(delta_epsilon)
+    term2 = (np.cos(theta2/2) * np.cos(theta2/2 + epsilon2) + (1/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2)) * np.cos(epsilon_tot)
+    term3 = -0.5 * np.sin(epsilon2) * np.sin(epsilon_tot)
+    
+    F = (term1 + term2 + term3)**2
+    return F
 
 # ----------------------------------------
 # Simple fidelity: cos^2(eps1)cos^2(eps2)cos^2(eps3)
