@@ -1,207 +1,119 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 # ----------------------------------------
-# Define F(theta2, eps1, eps2, eps3)
+# Fidelity functions
 # ----------------------------------------
-
-def fidelity_two_rotations(epsilon1, epsilon2):
-    """
-    Compute the fidelity-like function for two rotations around z and n axis.
-    
-    Parameters
-    ----------
-    epsilon1 : float
-        Rotation angle error around z-axis (radians)
-    epsilon2 : float
-        Rotation angle error around axis n (radians)
-    
-    Returns
-    -------
-    float
-        Fidelity
-    """
+def F_n_z(epsilon1, epsilon2):
     return (np.cos(epsilon2) * np.cos(epsilon1) - 0.5 * np.sin(epsilon2) * np.sin(epsilon1))**2
 
-def fidelity_two_rotations_simple(epsilon1, epsilon2):
-    """
-    Compute fidelity for two rotations around z and x axis 
-    F = [cos(epsilon2) * cos(epsilon1)]^2
-    
-    Parameters
-    ----------
-    epsilon1 : float
-        Rotation angle error around z-axis (radians)
-    epsilon2 : float
-        Rotation angle error around x-axis (radians)
-    
-    Returns
-    -------
-    float
-        Fidelity
-    """
+def F_x_z(epsilon1, epsilon2):
     return (np.cos(epsilon1) * np.cos(epsilon2))**2
-    
-def fidelity_general(theta2, epsilon1, epsilon2):
-    """
-    Compute the fidelity function for two rotations with errors.
-    
-    Parameters
-    ----------
-    theta2 : float
-        Rotation angle of the main pulse (radians)
-    epsilon1 : float
-        Error rotation 1 (radians)
-    epsilon2 : float
-        Error rotation 2 (radians)
-    
-    Returns
-    -------
-    float
-        Fidelity
-    """
-    delta_epsilon = epsilon2 - epsilon1
-    epsilon_tot = epsilon2 + epsilon1
-    
+
+def F(theta2, epsilon1, epsilon2, epsilon3):
+    delta_epsilon = epsilon1 - epsilon3
+    epsilon_tot = epsilon3 + epsilon1
+
     term1 = (3/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2) * np.cos(delta_epsilon)
     term2 = (np.cos(theta2/2) * np.cos(theta2/2 + epsilon2) + (1/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2)) * np.cos(epsilon_tot)
     term3 = -0.5 * np.sin(epsilon2) * np.sin(epsilon_tot)
-    
-    F = (term1 + term2 + term3)**2
-    return F
+
+    return (term1 + term2 + term3)**2
+
+def F_simple(epsilon1, epsilon2, epsilon3):
+    return (np.cos(epsilon1)**2) * (np.cos(epsilon2)**2) * (np.cos(epsilon3)**2)
 
 # ----------------------------------------
-# Simple fidelity: cos^2(eps1)cos^2(eps2)cos^2(eps3)
+# Compute grid for any function
 # ----------------------------------------
-def F_simple(eps1, eps2, eps3):
-    return (np.cos(eps1)**2) * (np.cos(eps2)**2) * (np.cos(eps3)**2)
-
-# ----------------------------------------
-# 3D surface plot: Z = F(theta2, eps1, eps2, eps3)
-# ----------------------------------------
-def plot_F(theta2, eps2, eps1_range, eps3_range, resolution=200):
+def compute_grid(func, theta2=None, eps1_range=(-0.1,0.1), eps2_range=(-0.1,0.1), eps3_range=(-0.1,0.1), resolution=200):
     eps1 = np.linspace(*eps1_range, resolution)
+    eps2 = np.linspace(*eps2_range, resolution)
     eps3 = np.linspace(*eps3_range, resolution)
-    E1, E3 = np.meshgrid(eps1, eps3)
+    E1, E2, E3 = np.meshgrid(eps1, eps2, eps3, indexing='ij')
 
-    Z = 1-F(theta2, E1, eps2, E3)
+    if theta2 is not None:
+        Z = func(theta2, E1, E2, E3)
+    else:
+        Z = func(E1, E2)  # for 2D fidelities
 
-    fig = plt.figure(figsize=(9,6))
+    return E1, E2, E3, Z
+
+# ----------------------------------------
+# 3D surface plotting
+# ----------------------------------------
+def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", title="Fidelity Surface"):
+    fig = plt.figure(figsize=(8,6))
     ax = fig.add_subplot(111, projection='3d')
-
-    ax.plot_surface(E1, E3, np.log10(Z))
-
-    ax.set_xlabel("ε₁")
-    ax.set_ylabel("ε₃")
-    ax.set_zlabel("F")
-
-    plt.title(f"F(θ₂={theta2}, ε₂={eps2})")
-    plt.show()
-
-def find_max_F(theta2, eps2, eps1_range, eps3_range, resolution=400):
-    eps1 = np.linspace(*eps1_range, resolution)
-    eps3 = np.linspace(*eps3_range, resolution)
-    E1, E3 = np.meshgrid(eps1, eps3)
-
-    Z = F(theta2, E1, eps2, E3)
-
-    max_val = np.max(Z)
-    idx = np.argmax(Z)
-
-    # unravel index to get coordinates
-    i, j = np.unravel_index(idx, Z.shape)
-    eps1_max = E1[i, j]
-    eps3_max = E3[i, j]
-    return max_val, eps1_max, eps3_max
-
-# ----------------------------------------
-# Plot both fidelities on the same figure
-# ----------------------------------------
-def plot_both(theta2, eps2, eps1_range, eps3_range, resolution=150):
-
-    # Create grid
-    eps1 = np.linspace(*eps1_range, resolution)
-    eps3 = np.linspace(*eps3_range, resolution)
-    E1, E3 = np.meshgrid(eps1, eps3)
-
-    # Evaluate both fidelities
-    Z_full = 1-F(theta2, E1, eps2, E3)
-    Z_simple = 1-F_simple(E1, eps2, E3)
-
-    # Plot
-    fig = plt.figure(figsize=(10,7))
-    ax = fig.add_subplot(111, projection='3d')
-
-    ax.plot_surface(E1, E3, np.log10(Z_full), alpha=0.6)
-    ax.plot_surface(E1, E3, np.log10(Z_simple), alpha=0.6)
-
-    ax.set_xlabel("ε₁")
-    ax.set_ylabel("ε₃")
-    ax.set_zlabel("Fidelities")
-    plt.title("Full Fidelity vs Simple Fidelity")
-
+    ax.plot_surface(E1, E2, np.log10(1-Z), cmap='viridis')
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_zlabel(zlabel)
+    ax.set_title(title)
     plt.show()
 
 # ----------------------------------------
 # Heatmap plotting
 # ----------------------------------------
-def plot_heatmaps(theta2, eps2, eps1_range, eps3_range, resolution=300):
-
-    # Create grid
-    eps1 = np.linspace(*eps1_range, resolution)
-    eps3 = np.linspace(*eps3_range, resolution)
-    E1, E3 = np.meshgrid(eps1, eps3)
-
-    # Compute values
-    Z_full = 1-F(theta2, E1, eps2, E3)
-    Z_simple = 1-F_simple(E1, eps2, E3)
-
-    # Plot side-by-side heatmaps
-    fig, ax = plt.subplots(1, 2, figsize=(14, 5))
-
-    im1 = ax[0].imshow(np.log10(Z_full), extent=[*eps1_range, *eps3_range],
-                       origin='lower', cmap='viridis', aspect='auto')
-    ax[0].set_title("Full Fidelity Heatmap")
-    ax[0].set_xlabel("ε₁")
-    ax[0].set_ylabel("ε₃")
-    fig.colorbar(im1, ax=ax[0])
-
-    im2 = ax[1].imshow(np.log10(Z_simple), extent=[*eps1_range, *eps3_range],
-                       origin='lower', cmap='viridis', aspect='auto')
-    ax[1].set_title("Simple Fidelity Heatmap")
-    ax[1].set_xlabel("ε₁")
-    ax[1].set_ylabel("ε₃")
-    fig.colorbar(im2, ax=ax[1])
-
-    plt.tight_layout()
+def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"):
+    plt.figure(figsize=(6,5))
+    Z_plot = np.log10(1-Z)  # log of infidelity
+    im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
+                    origin='lower', cmap='viridis', aspect='auto')
+    plt.colorbar(im, label='Infidelity')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
     plt.show()
 
 # ----------------------------------------
-# Example usage
+# Example usage for 2D fidelities
 # ----------------------------------------
-theta2_value = 0.3     # choose your θ₂
-eps2_value = 0.1       # choose your ε₂
+# F_n_z heatmap
+eps_range = (-0.1, 0.1)
+E1, E2, _, Z = compute_grid(F_n_z, eps1_range=eps_range, eps2_range=eps_range)
+plot_heatmap(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{n,z}$ Heatmap")
+plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{n,z}$ Surface")
 
-plot_heatmaps(
-    theta2_value,
-    eps2_value,
-    eps1_range=(-0.5, 0.5),
-    eps3_range=(-0.5, 0.5),
-    resolution=300
-)
+# # F_x_z heatmap
+E1, E2, _, Z = compute_grid(F_x_z, eps1_range=eps_range, eps2_range=eps_range)
+plot_heatmap(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Heatmap")
+plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Surface")
 
-plot_both(
-    theta2_value,
-    eps2_value,
-    eps1_range=(-0.5, 0.5),
-    eps3_range=(-0.5, 0.5),
-    resolution=150
-)
+# Example usage for 3D fidelities (theta2-dependent)
+# theta2 = np.pi/2
+# eps1_range = eps2_range = (-np.pi, np.pi)
+# eps3_fixed = 0.05
+# eps1 = np.linspace(*eps1_range, 150)
+# eps2 = np.linspace(*eps2_range, 150)
+# E1, E2 = np.meshgrid(eps1, eps2)
+# Z = F(theta2, E1, E2, eps3_fixed)
+# plot_surface_3d(E1, E2, Z,
+#                 xlabel="ε1",
+#                 ylabel="ε3",
+#                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
 
-plot_F(
-    theta2=theta2_value,
-    eps2=eps2_value,
-    eps1_range=(-np.pi, np.pi),
-    eps3_range=(-np.pi, np.pi),
-    resolution=200
-)
+# plot_heatmap(E1, E2, Z,
+#              xlabel="ε1",
+#              ylabel="ε3",
+#              title=f"Infidelity Heatmap F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
+
+## tuning eps and fixing eps_2
+theta2 =np.arctan(np.sqrt(8))
+eps1_range = eps3_range = (-0.1, 0.1)
+eps2_fixed = 0.01
+eps1 = np.linspace(*eps1_range, 150)
+eps3 = np.linspace(*eps3_range, 150)
+E1, E3 = np.meshgrid(eps1, eps3)
+Z = F(theta2, E1, eps2_fixed, E3)
+plot_surface_3d(E1, E3, Z,
+                xlabel="ε1",
+                ylabel="ε3",
+                title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+
+plot_heatmap(E1, E3, Z,
+             xlabel="ε1",
+             ylabel="ε3",
+             title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+
