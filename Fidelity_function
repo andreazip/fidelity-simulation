@@ -28,6 +28,11 @@ def F(theta2, eps1, eps2, eps3):
 
     return (term1 + term2 + term3) ** 2
 
+# ----------------------------------------
+# Simple fidelity: cos^2(eps1)cos^2(eps2)cos^2(eps3)
+# ----------------------------------------
+def F_simple(eps1, eps2, eps3):
+    return (np.cos(eps1)**2) * (np.cos(eps2)**2) * (np.cos(eps3)**2)
 
 # ----------------------------------------
 # 3D surface plot: Z = F(theta2, eps1, eps2, eps3)
@@ -37,12 +42,12 @@ def plot_F(theta2, eps2, eps1_range, eps3_range, resolution=200):
     eps3 = np.linspace(*eps3_range, resolution)
     E1, E3 = np.meshgrid(eps1, eps3)
 
-    Z = F(theta2, E1, eps2, E3)
+    Z = 1-F(theta2, E1, eps2, E3)
 
     fig = plt.figure(figsize=(9,6))
     ax = fig.add_subplot(111, projection='3d')
 
-    ax.plot_surface(E1, E3, Z)
+    ax.plot_surface(E1, E3, np.log10(Z))
 
     ax.set_xlabel("ε₁")
     ax.set_ylabel("ε₃")
@@ -51,6 +56,83 @@ def plot_F(theta2, eps2, eps1_range, eps3_range, resolution=200):
     plt.title(f"F(θ₂={theta2}, ε₂={eps2})")
     plt.show()
 
+def find_max_F(theta2, eps2, eps1_range, eps3_range, resolution=400):
+    eps1 = np.linspace(*eps1_range, resolution)
+    eps3 = np.linspace(*eps3_range, resolution)
+    E1, E3 = np.meshgrid(eps1, eps3)
+
+    Z = F(theta2, E1, eps2, E3)
+
+    max_val = np.max(Z)
+    idx = np.argmax(Z)
+
+    # unravel index to get coordinates
+    i, j = np.unravel_index(idx, Z.shape)
+    eps1_max = E1[i, j]
+    eps3_max = E3[i, j]
+    return max_val, eps1_max, eps3_max
+
+# ----------------------------------------
+# Plot both fidelities on the same figure
+# ----------------------------------------
+def plot_both(theta2, eps2, eps1_range, eps3_range, resolution=150):
+
+    # Create grid
+    eps1 = np.linspace(*eps1_range, resolution)
+    eps3 = np.linspace(*eps3_range, resolution)
+    E1, E3 = np.meshgrid(eps1, eps3)
+
+    # Evaluate both fidelities
+    Z_full = 1-F(theta2, E1, eps2, E3)
+    Z_simple = 1-F_simple(E1, eps2, E3)
+
+    # Plot
+    fig = plt.figure(figsize=(10,7))
+    ax = fig.add_subplot(111, projection='3d')
+
+    ax.plot_surface(E1, E3, np.log10(Z_full), alpha=0.6)
+    ax.plot_surface(E1, E3, np.log10(Z_simple), alpha=0.6)
+
+    ax.set_xlabel("ε₁")
+    ax.set_ylabel("ε₃")
+    ax.set_zlabel("Fidelities")
+    plt.title("Full Fidelity vs Simple Fidelity")
+
+    plt.show()
+
+# ----------------------------------------
+# Heatmap plotting
+# ----------------------------------------
+def plot_heatmaps(theta2, eps2, eps1_range, eps3_range, resolution=300):
+
+    # Create grid
+    eps1 = np.linspace(*eps1_range, resolution)
+    eps3 = np.linspace(*eps3_range, resolution)
+    E1, E3 = np.meshgrid(eps1, eps3)
+
+    # Compute values
+    Z_full = 1-F(theta2, E1, eps2, E3)
+    Z_simple = 1-F_simple(E1, eps2, E3)
+
+    # Plot side-by-side heatmaps
+    fig, ax = plt.subplots(1, 2, figsize=(14, 5))
+
+    im1 = ax[0].imshow(np.log10(Z_full), extent=[*eps1_range, *eps3_range],
+                       origin='lower', cmap='viridis', aspect='auto')
+    ax[0].set_title("Full Fidelity Heatmap")
+    ax[0].set_xlabel("ε₁")
+    ax[0].set_ylabel("ε₃")
+    fig.colorbar(im1, ax=ax[0])
+
+    im2 = ax[1].imshow(np.log10(Z_simple), extent=[*eps1_range, *eps3_range],
+                       origin='lower', cmap='viridis', aspect='auto')
+    ax[1].set_title("Simple Fidelity Heatmap")
+    ax[1].set_xlabel("ε₁")
+    ax[1].set_ylabel("ε₃")
+    fig.colorbar(im2, ax=ax[1])
+
+    plt.tight_layout()
+    plt.show()
 
 # ----------------------------------------
 # Example usage
@@ -58,10 +140,26 @@ def plot_F(theta2, eps2, eps1_range, eps3_range, resolution=200):
 theta2_value = 0.3     # choose your θ₂
 eps2_value = 0.1       # choose your ε₂
 
+plot_heatmaps(
+    theta2_value,
+    eps2_value,
+    eps1_range=(-0.5, 0.5),
+    eps3_range=(-0.5, 0.5),
+    resolution=300
+)
+
+plot_both(
+    theta2_value,
+    eps2_value,
+    eps1_range=(-0.5, 0.5),
+    eps3_range=(-0.5, 0.5),
+    resolution=150
+)
+
 plot_F(
     theta2=theta2_value,
     eps2=eps2_value,
-    eps1_range=(-0.5, 0.5),
-    eps3_range=(-0.5, 0.5),
+    eps1_range=(-np.pi, np.pi),
+    eps3_range=(-np.pi, np.pi),
     resolution=200
 )
