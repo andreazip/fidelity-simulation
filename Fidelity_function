@@ -51,7 +51,7 @@ def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", ti
     ax.set_ylabel(ylabel)
     ax.set_zlabel(zlabel)
     ax.set_title(title)
-    plt.show()
+    
 
 # ----------------------------------------
 # Heatmap plotting
@@ -65,7 +65,7 @@ def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
-    plt.show()
+    
 
 # ----------------------------------------
 # Example usage for 2D fidelities
@@ -117,3 +117,16 @@ plot_heatmap(E1, E3, Z,
              ylabel="ε3",
              title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
 
+
+#compare with simpkle cos function
+Z_simple =F_simple(E1, eps2_fixed, E3)
+plot_surface_3d(E1, E3, Z_simple,
+                xlabel="ε1",
+                ylabel="ε3",
+                title=f"Infidelity 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+
+plot_heatmap(E1, E3, Z_simple,
+             xlabel="ε1",
+             ylabel="ε3",
+             title=f"Infidelity Heatmap 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+plt.show()
