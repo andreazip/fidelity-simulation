@@ -89,8 +89,44 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
     # Add a figure-wide title
     fig.suptitle(title, fontsize=16)
 
-   # plt.tight_layout(rect=[0, 0, 1, 0.95])  # leave space for suptitle
     #plt.show()
+
+def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=100, resolution_eps=100):
+    """
+    Plot a heatmap of fidelity (or infidelity) as a function of theta2 and epsilon,
+    assuming all epsilon errors are equal (eps1 = eps2 = eps3 = eps).
+    
+    Parameters
+    ----------
+    theta_range : tuple
+        (theta_min, theta_max) in radians
+    epsilon_range : tuple
+        (epsilon_min, epsilon_max) in radians
+    resolution_theta : int
+        Number of points along theta2 axis
+    resolution_eps : int
+        Number of points along epsilon axis
+    log_scale : bool
+        If True, plot log10(1-F); else plot 1-F
+    """
+    theta_vals = np.linspace(*theta_range, resolution_theta)
+    eps_vals = np.linspace(*epsilon_range, resolution_eps)
+
+    # Create meshgrid
+    THETA, EPS = np.meshgrid(theta_vals, eps_vals, indexing='ij')
+
+    # Compute fidelity
+    F_vals = F(THETA, EPS, EPS, EPS)   # all eps equal
+    Z = np.log10(1 - F_vals)  #compute infidelities
+        
+    # Plot heatmap
+    plt.figure(figsize=(6,5))
+    im = plt.pcolormesh(EPS, THETA, Z, shading='auto', cmap='viridis')
+    plt.colorbar(im, label='Infidelity')
+    plt.xlabel("ε (all equal)")
+    plt.ylabel("θ₂")
+    plt.title("Infidelity Heatmap vs θ₂ and ε (all eps equal)")
+    plt.show()
 
 # ----------------------------------------
 # Example usage for 2D fidelities
@@ -108,67 +144,69 @@ plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Surface")
 
 plt.show()
 
-# #Example usage for 3D fidelities (theta2-dependent)
-# theta2 = np.arctan(np.sqrt(8))
-# #theta2 = 0.5
-# eps1_range = eps2_range = (-np.pi, np.pi)
-# eps3_fixed = 0.01
-# eps1 = np.linspace(*eps1_range, 150)
-# eps2 = np.linspace(*eps2_range, 150)
-# E1, E2 = np.meshgrid(eps1, eps2)
-# Z1 = F(theta2, E1, E2, eps3_fixed)
-# # plot_surface_3d(E1, E2, Z,
-# #                 xlabel="ε1",
-# #                 ylabel="ε2",
-# #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
+#Example usage for 3D fidelities (theta2-dependent)
+theta2 = np.arctan(np.sqrt(8))
+#theta2 = 0.5
+eps1_range = eps2_range = (-np.pi, np.pi)
+eps3_fixed = 0.01
+eps1 = np.linspace(*eps1_range, 150)
+eps2 = np.linspace(*eps2_range, 150)
+E1, E2 = np.meshgrid(eps1, eps2)
+Z1 = F(theta2, E1, E2, eps3_fixed)
+# plot_surface_3d(E1, E2, Z,
+#                 xlabel="ε1",
+#                 ylabel="ε2",
+#                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
 
-# plot_heatmap(E1, E2, Z1,
-#              xlabel="ε1",
-#              ylabel="ε2",
-#              title=f"Infidelity Heatmap F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
+plot_heatmap(E1, E2, Z1,
+             xlabel="ε1",
+             ylabel="ε2",
+             title=f"Infidelity Heatmap F(theta2={theta2:.2f}, eps3={eps3_fixed:.2f})")
 
-# ## tuning eps and fixing eps_2
-# theta2 =np.arctan(np.sqrt(8))
-# #theta2 = 0.5
-# eps1_range = eps3_range = (-np.pi, np.pi)
-# eps2_fixed = 0.01
-# eps1 = np.linspace(*eps1_range, 150)
-# eps3 = np.linspace(*eps3_range, 150)
-# E1, E3 = np.meshgrid(eps1, eps3)
-# Z2 = F(theta2, E1, eps2_fixed, E3)
-# # plot_surface_3d(E1, E3, Z,
-# #                 xlabel="ε1",
-# #                 ylabel="ε3",
-# #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+## tuning eps and fixing eps_2
+theta2 =np.arctan(np.sqrt(8))
+#theta2 = 0.5
+eps1_range = eps3_range = (-np.pi, np.pi)
+eps2_fixed = 0.01
+eps1 = np.linspace(*eps1_range, 150)
+eps3 = np.linspace(*eps3_range, 150)
+E1, E3 = np.meshgrid(eps1, eps3)
+Z2 = F(theta2, E1, eps2_fixed, E3)
+# plot_surface_3d(E1, E3, Z,
+#                 xlabel="ε1",
+#                 ylabel="ε3",
+#                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
 
-# plot_heatmap(E1, E3, Z2,
+plot_heatmap(E1, E3, Z2,
+             xlabel="ε1",
+             ylabel="ε3",
+             title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+
+
+#compare with simpkle cos function
+# Z_simple =F_simple(E1, eps2_fixed, E3)
+# plot_surface_3d(E1, E3, Z_simple,
+#                 xlabel="ε1",
+#                 ylabel="ε3",
+#                 title=f"Infidelity 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+
+# plot_heatmap(E1, E3, Z_simple,
 #              xlabel="ε1",
 #              ylabel="ε3",
-#              title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+#              title=f"Infidelity Heatmap 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
 
+plt.show()
 
-# #compare with simpkle cos function
-# # Z_simple =F_simple(E1, eps2_fixed, E3)
-# # plot_surface_3d(E1, E3, Z_simple,
-# #                 xlabel="ε1",
-# #                 ylabel="ε3",
-# #                 title=f"Infidelity 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+theta_list = [0.5, 1.0, np.arctan(np.sqrt(8)), 2.0]
 
-# # plot_heatmap(E1, E3, Z_simple,
-# #              xlabel="ε1",
-# #              ylabel="ε3",
-# #              title=f"Infidelity Heatmap 1-F approximation (theta2={theta2:.2f}, eps2={eps2_fixed:.2f})")
+#plot heatmaps for different theta and fixing epsilon 3
+plot_heatmaps_theta2(theta_list, E1, E2, eps3_fixed)
 
-# plt.show()
+# fixing epsilon 2
+plot_heatmaps_theta2(theta_list, E1, eps2_fixed, E3, False, ylabel="ε3" )
 
-# theta_list = [0.5, 1.0, np.arctan(np.sqrt(8)), 2.0]
+plt.show()
 
-# #plot heatmaps for different theta and fixing epsilon 3
-# plot_heatmaps_theta2(theta_list, E1, E2, eps3_fixed)
-
-# # fixing epsilon 2
-# plot_heatmaps_theta2(theta_list, E1, eps2_fixed, E3, False, ylabel="ε3" )
-
-# plt.show()
-
+#let's fix all epsilon equal and compute the heatmap for epsilon and theta
+plot_heatmap_theta_vs_epsilon(theta_range=(-np.pi, np.pi), epsilon_range=(-np.pi/2,np.pi/2))
 
