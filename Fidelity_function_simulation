@@ -21,7 +21,7 @@ def compute_2pulses (U1, U2, e1, e2, theta1, theta2):
     # Loop over errors
     for i, e1 in enumerate(errs):
         for j, e2 in enumerate(errs):
-            U = R(U1, theta1 + e1) @ R(U2, theta2 + e2)
+            U = R(U1, theta1 + 2*e1) @ R(U2, theta2 + 2*e2)
             Ut = R(U1, theta1) @ R(U2, theta2)  # ideal
             F[i,j] = fidelity(Ut, U)
 
@@ -34,7 +34,7 @@ def compute_3pulses (U1, U2, U3, e1, e2, e3, theta1, theta2, theta3):
     # Loop over errors
     for i, e1 in enumerate(errs):
         for j, e3 in enumerate(errs):
-            U = R(U1, theta1 + e1) @ R(U2, theta2 + e2) @ R(U3, theta3 + e3)
+            U = R(U1, theta1 + 2*e1) @ R(U2, theta2 + 2*e2) @ R(U3, theta3 + 2*e3)
             Ut = R(U1, theta1) @ R(U2, theta2) @R(U3, theta3)  # ideal
             F[i,j] = fidelity(Ut, U)
 
@@ -63,30 +63,32 @@ theta1 = np.pi-np.arctan(np.sqrt(8))  # X rotation
 theta2 = np.arctan(np.sqrt(8))  # Y rotation
 n = -(X+ np.sqrt(3)*Z)/2 # this should be with a minus
 
-# Error ranges
-errs = np.linspace(-0.01, 0.01, 200)  
-#xx rotation
-F_xx = compute_2pulses(X,X,errs, errs, theta1, theta2)
-plot_heatmap(F_xx,title="Infidelity heatmap x,x rotation")
 
-errs = np.linspace(-0.012, 0.012, 200) 
+errs = np.linspace(-0.007, 0.007, 150) 
 #xz rotation
 F_xz = compute_2pulses(Z,X,errs, errs, theta1, theta2)
 plot_heatmap(F_xz, title="Infidelity heatmap x,z rotation")
 
-errs = np.linspace(-0.014, 0.014, 200) 
+errs = np.linspace(-0.006, 0.006, 150) 
 #nz rotation
 F_nz = compute_2pulses(n,Z,errs, errs, theta1, theta2)
 plot_heatmap(F_nz, title="Infidelity heatmap n,z rotation")
 
-errs = np.linspace(-0.0082, 0.0082, 200) 
+# Error ranges
+errs = np.linspace(-0.005, 0.005, 150)  
+#xx rotation
+F_xx = compute_2pulses(X,X,errs, errs, theta1, theta2)
+plot_heatmap(F_xx,title="Infidelity heatmap x,x rotation")
+
+
+errs = np.linspace(-0.0041, 0.0041, 150) 
 #znz rotation
-F_znz = compute_3pulses(Z,n,Z,errs, 8.2e-3, errs, theta1, theta2, theta1)
+F_znz = compute_3pulses(Z,n,Z,errs, -4.1e-3, errs, theta1, theta2, theta1)
 plot_heatmap(F_znz, title="Infidelity heatmap z,n,z rotation")
 
-errs = np.linspace(-0.0067, 0.0067, 100)  
+errs = np.linspace(-0.0034, 0.0034, 150)  
 #zzz rotation
-F_znz = compute_3pulses(Z,Z,Z,errs, 6.7e-3, errs, theta1, theta2, theta1)
+F_znz = compute_3pulses(Z,Z,Z,errs, -3.4e-3, errs, theta1, theta2, theta1)
 plot_heatmap(F_znz, title="Infidelity heatmap z,z,z rotation")
 
 
