@@ -52,7 +52,7 @@ def plot_delta_V(theta=None, scale_factor=5000, show_grid=True):
     if theta is None:
         theta = np.linspace(0.1, 2, 100)
 
-    delta_V = 2 / (scale_factor * theta)  # in Volts
+    delta_V = 1 / (scale_factor * theta)  # in Volts
     plt.figure(figsize=(6, 4))
     plt.semilogy(theta, delta_V * 1e6, linestyle='-')  # convert to µV
     plt.xlabel(r'$\theta$ [rad]')
@@ -85,21 +85,26 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     plt.figure(figsize=(12, 5))
 
     plt.subplot(1, 2, 1)
+    time_resolution =[]
     for i in range(len(labels)):
         delta_t = 1 / (f_osc * 1e6 * scale_delta_t[i])  # seconds
+        time_resolution.append(1 / (100* 1e6 * scale_delta_t[i])) # compute at 100 MHz
         plt.loglog(f_osc, delta_t * 1e9, linestyle='-', label=labels[i])  # ns
     plt.xlabel(r'$f_{\mathrm{osc}}$ [MHz]')
     plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ns]')
     plt.title('Gate Time vs Oscillation Frequency')
     plt.grid(True, which="both", ls="--", lw=0.5)
     plt.legend()
+    
 
     # ----------------------------------------
     # ΔV plot (right subplot)
     # ----------------------------------------
     plt.subplot(1, 2, 2)
+    voltage_resolution =[]
     for i in range(len(labels)):
-        delta_V = 2 / (scale_delta_V[i] * theta)  # V
+        delta_V = 1 / (scale_delta_V[i] * theta)  # V
+        voltage_resolution.append(1 / (scale_delta_V[i] * 1) ) #compute felta_V for worst case
         plt.semilogy(theta, delta_V * 1e6, linestyle='-', label=labels[i])  # µV
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$\Delta V$ [$\mu V$]')
@@ -108,7 +113,8 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     plt.legend()
 
     plt.tight_layout()
-    plt.show()
+   # plt.show()
+    return time_resolution, voltage_resolution
 
 def main():
     # ## for x and z rotation:
@@ -140,6 +146,10 @@ def main():
     # plot_delta_V(scale_factor=625000/51)
 
     #to plot all together
-    plot_all_deltas()
+    time_res, voltage_res = plot_all_deltas()
+    labels = ['single rotation','x-z rotation', 'n-z rotation','z-z rotation', 'z-n-z rotation','z-z-z rotation']
+    for i in range(len(time_res)):
+        print(f"For {labels[i]}: \n time resolution: {time_res[i]*1e12:.3f} [ps]; voltage resolution: {voltage_res[i]*1e3:.3f} [mV]")
+    plt.show()
 
 main()    

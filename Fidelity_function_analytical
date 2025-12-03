@@ -60,8 +60,15 @@ def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", ti
 # Heatmap plotting
 # ----------------------------------------
 def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"):
+    Z = Z.copy()
+    # Compute infidelity
+    inf = 1 - Z
+    # Find smallest positive infidelity
+    nz_min = np.min(inf[inf > 0])
+    # Replace zeros in INFIDELITY
+    inf[inf == 0] = nz_min
     plt.figure(figsize=(6,5))
-    Z_plot = np.log10(1-Z)  # log of infidelity
+    Z_plot = np.log10(inf)  # log of infidelity
     im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
                     origin='lower', cmap='viridis', aspect='auto')
     plt.colorbar(im, label='Infidelity')

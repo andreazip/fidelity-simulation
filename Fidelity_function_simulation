@@ -1,0 +1,98 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
+# Pauli matrices
+I = np.eye(2)
+X = np.array([[0, 1], [1, 0]], dtype=complex)
+Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+Z = np.array([[1, 0], [0, -1]], dtype=complex)
+
+def R(pauli, theta):
+    return np.cos(theta/2)*I - 1j*np.sin(theta/2)*pauli
+
+def fidelity(Ut, U):
+    return 0.25 * (abs(np.trace(Ut.conj().T @ U)))**2
+
+def compute_2pulses (U1, U2, e1, e2, theta1, theta2):
+    # U1 and U2 represent the rotation axis ww want to considr
+    # Initialize fidelity matrix
+    F = np.zeros((len(e1), len(e2)))
+    # Loop over errors
+    for i, e1 in enumerate(errs):
+        for j, e2 in enumerate(errs):
+            U = R(U1, theta1 + e1) @ R(U2, theta2 + e2)
+            Ut = R(U1, theta1) @ R(U2, theta2)  # ideal
+            F[i,j] = fidelity(Ut, U)
+
+    return F
+
+def compute_3pulses (U1, U2, U3, e1, e2, e3, theta1, theta2, theta3):
+    # U1 and U2 represent the rotation axis ww want to considr
+    # Initialize fidelity matrix
+    F = np.zeros((len(e1), len(e3)))
+    # Loop over errors
+    for i, e1 in enumerate(errs):
+        for j, e3 in enumerate(errs):
+            U = R(U1, theta1 + e1) @ R(U2, theta2 + e2) @ R(U3, theta3 + e3)
+            Ut = R(U1, theta1) @ R(U2, theta2) @R(U3, theta3)  # ideal
+            F[i,j] = fidelity(Ut, U)
+
+    return F
+
+def plot_heatmap(F,xlabel="ε1", ylabel="ε2", title="Infidelity Heatmap"):
+    F = F.copy()
+    # Compute infidelity
+    inf = 1 - F
+    # Find smallest positive infidelity
+    nz_min = np.min(inf[inf > 0])
+    # Replace zeros in INFIDELITY
+    inf[inf == 0] = nz_min
+    plt.figure(figsize=(6,5))
+    plt.imshow(np.log10(inf), origin='lower', extent=[errs[0], errs[-1], errs[0], errs[-1]],
+            cmap='viridis',  aspect='auto')
+    plt.colorbar(label='Infidelity')
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.title(title)
+    #plt.show()
+
+
+# Target angles
+theta1 = np.pi-np.arctan(np.sqrt(8))  # X rotation
+theta2 = np.arctan(np.sqrt(8))  # Y rotation
+n = -(X+ np.sqrt(3)*Z)/2 # this should be with a minus
+
+# Error ranges
+errs = np.linspace(-0.01, 0.01, 200)  
+#xx rotation
+F_xx = compute_2pulses(X,X,errs, errs, theta1, theta2)
+plot_heatmap(F_xx,title="Infidelity heatmap x,x rotation")
+
+errs = np.linspace(-0.012, 0.012, 200) 
+#xz rotation
+F_xz = compute_2pulses(Z,X,errs, errs, theta1, theta2)
+plot_heatmap(F_xz, title="Infidelity heatmap x,z rotation")
+
+errs = np.linspace(-0.014, 0.014, 200) 
+#nz rotation
+F_nz = compute_2pulses(n,Z,errs, errs, theta1, theta2)
+plot_heatmap(F_nz, title="Infidelity heatmap n,z rotation")
+
+errs = np.linspace(-0.0082, 0.0082, 200) 
+#znz rotation
+F_znz = compute_3pulses(Z,n,Z,errs, 8.2e-3, errs, theta1, theta2, theta1)
+plot_heatmap(F_znz, title="Infidelity heatmap z,n,z rotation")
+
+errs = np.linspace(-0.0067, 0.0067, 100)  
+#zzz rotation
+F_znz = compute_3pulses(Z,Z,Z,errs, 6.7e-3, errs, theta1, theta2, theta1)
+plot_heatmap(F_znz, title="Infidelity heatmap z,z,z rotation")
+
+
+plt.show()
+
+
+
+
+
