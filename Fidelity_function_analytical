@@ -120,6 +120,7 @@ def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=1
     log_scale : bool
         If True, plot log10(1-F); else plot 1-F
     """
+
     theta_vals = np.linspace(*theta_range, resolution_theta)
     eps_vals = np.linspace(*epsilon_range, resolution_eps)
 
@@ -127,7 +128,7 @@ def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=1
     THETA, EPS = np.meshgrid(theta_vals, eps_vals, indexing='ij')
 
     # Compute fidelity
-    F_vals = F(THETA, EPS, EPS, EPS)   # all eps equal
+    F_vals = F(THETA, EPS, -EPS, EPS)   # all eps equal
     # Compute log-infidelity safely
     Z = np.log10(np.clip(1 - F_vals, 1e-15, None))
         
@@ -221,9 +222,10 @@ def compute_z_z_z_fixed3():
 
 def compute_different_theta():
     eps3_fixed= eps2_fixed= 4.1e-3
-    eps1_range = eps2_range= eps3_range = (-np.pi*2, np.pi*2)
+    eps1_range = eps3_range = (-np.pi*2, np.pi*2)
+    eps2_range = (np.pi*2, -np.pi*2)
     eps1 = np.linspace(*eps1_range, 150)
-    eps2 = -np.linspace(*eps2_range, 150)
+    eps2 = np.linspace(*eps2_range, 150)
     eps3 = np.linspace(*eps3_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
     theta_list = [0, np.pi/4, np.pi/2, np.pi]
@@ -286,21 +288,21 @@ def main():
     # plt.show()
 
     # #znz rotation
-    # compute_z_n_z_fixed2() #fixing epsilon 2
-    # compute_z_n_z_fixed3() #fixing epsilon 3
+    compute_z_n_z_fixed2() #fixing epsilon 2
+    compute_z_n_z_fixed3() #fixing epsilon 3
 
     # #zzz rotation
     # compute_z_z_z_fixed3() #centered where the argument of cos is 0
     # plt.show()
 
     # understand evoution with theta
-    compute_different_theta()
-    plt.show()
+    # compute_different_theta()
+    
 
 main()
 
-#theta2 = np.arctan(np.sqrt(8)) # example
-theta2 =np.pi
+theta2 = np.arctan(np.sqrt(8)) # example
+#theta2 =np.pi
 
 e_star, F_min_star, params_star = find_minimal_error_threshold(theta2)
 
@@ -308,3 +310,5 @@ print("Minimal e* =", e_star)
 print("At this error, worst-case F =", F_min_star)
 print("So 1 - F =", 1 - F_min_star)
 print("Error values producing failure:", params_star)
+
+plt.show()

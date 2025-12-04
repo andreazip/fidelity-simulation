@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.optimize import differential_evolution
 
 # Pauli matrices
 I = np.eye(2)
@@ -14,29 +15,28 @@ def R(pauli, theta):
 def fidelity(Ut, U):
     return 0.25 * (abs(np.trace(Ut.conj().T @ U)))**2
 
-def compute_2pulses (U1, U2, e1, e2, theta1, theta2):
-    # U1 and U2 represent the rotation axis ww want to considr
-    # Initialize fidelity matrix
-    F = np.zeros((len(e1), len(e2)))
-    # Loop over errors
-    for i, e1 in enumerate(errs):
-        for j, e2 in enumerate(errs):
+def compute_2pulses(U1, U2, e1_vals, e2_vals, theta1, theta2):
+    F = np.zeros((len(e1_vals), len(e2_vals)))
+
+    for i, e1 in enumerate(e1_vals):
+        for j, e2 in enumerate(e2_vals):
             U = R(U1, theta1 + 2*e1) @ R(U2, theta2 + 2*e2)
-            Ut = R(U1, theta1) @ R(U2, theta2)  # ideal
-            F[i,j] = fidelity(Ut, U)
+            Ut = R(U1, theta1) @ R(U2, theta2)
+            F[i, j] = fidelity(Ut, U)
 
     return F
 
-def compute_3pulses (U1, U2, U3, e1, e2, e3, theta1, theta2, theta3):
-    # U1 and U2 represent the rotation axis ww want to considr
-    # Initialize fidelity matrix
-    F = np.zeros((len(e1), len(e3)))
-    # Loop over errors
-    for i, e1 in enumerate(errs):
-        for j, e3 in enumerate(errs):
-            U = R(U1, theta1 + 2*e1) @ R(U2, theta2 + 2*e2) @ R(U3, theta3 + 2*e3)
-            Ut = R(U1, theta1) @ R(U2, theta2) @R(U3, theta3)  # ideal
-            F[i,j] = fidelity(Ut, U)
+
+def compute_3pulses(U1, U2, U3, e1_vals, e2_scalar, e3_vals, theta1, theta2, theta3):
+    F = np.zeros((len(e1_vals), len(e3_vals)))
+
+    for i, e1 in enumerate(e1_vals):
+        for j, e3 in enumerate(e3_vals):
+            U = ( R(U1, theta1 + 2*e1)
+                @ R(U2, theta2 + 2*e2_scalar)
+                @ R(U3, theta3 + 2*e3) )
+            Ut = R(U1, theta1) @ R(U2, theta2) @ R(U3, theta3)
+            F[i, j] = fidelity(Ut, U)
 
     return F
 
@@ -57,11 +57,111 @@ def plot_heatmap(F,xlabel="ε1", ylabel="ε2", title="Infidelity Heatmap"):
     plt.title(title)
     #plt.show()
 
+def find_minimal_eps_2pulse_opt(U1, U2, theta1, theta2,
+                                threshold=1e-4, e_max=0.02):
+
+    # Objective with penalty
+    def objective(params):
+        eps1, eps2 = params
+
+        # Compute infidelity
+        U = R(U1, theta1 + 2*eps1) @ R(U2, theta2 + 2*eps2)
+        Ut = R(U1, theta1) @ R(U2, theta2)
+        inf = 1 - fidelity(Ut, U)
+
+        r = np.sqrt(eps1**2 + eps2**2)
+
+        # Penalty if violation NOT reached
+        if inf < threshold:
+            penalty = 1e3 * (threshold - inf)
+        else:
+            penalty = 0.0
+
+        return r + penalty
+
+    bounds = [(-e_max, e_max), (-e_max, e_max)]
+
+    result = differential_evolution(
+        objective,
+        bounds,
+        tol=1e-9,
+        maxiter=2000,
+        polish=True
+    )
+
+    eps1_opt, eps2_opt = result.x
+
+    # Compute actual fidelity at solution
+    U = R(U1, theta1 + 2*eps1_opt) @ R(U2, theta2 + 2*eps2_opt)
+    Ut = R(U1, theta1) @ R(U2, theta2)
+    inf = 1 - fidelity(Ut, U)
+
+    return {
+        "eps1": eps1_opt,
+        "eps2": eps2_opt,
+        "r": np.sqrt(eps1_opt**2 + eps2_opt**2),
+        "infidelity": inf
+    }
+
+def find_minimal_eps_3pulse_opt(U1, U2, U3, theta1, theta2, theta3,
+                                threshold=1e-4, e_max=0.02):
+    """
+    Finds the minimal |eps1|, |eps2|, |eps3| such that the 3-pulse sequence
+    exceeds the infidelity threshold.
+    """
+
+    def objective(params):
+        eps1, eps2, eps3 = params
+
+        # Compute infidelity
+        U = (R(U1, theta1 + 2*eps1) 
+             @ R(U2, theta2 + 2*eps2) 
+             @ R(U3, theta3 + 2*eps3))
+        Ut = R(U1, theta1) @ R(U2, theta2) @ R(U3, theta3)
+        inf = 1 - fidelity(Ut, U)
+
+        r = np.sqrt(eps1**2 + eps2**2 + eps3**2)
+
+        # Penalty if infidelity threshold not reached
+        if inf < threshold:
+            penalty = 1e3 * (threshold - inf)
+        else:
+            penalty = 0.0
+
+        return r + penalty
+
+    bounds = [(-e_max, e_max), (-e_max, e_max), (-e_max, e_max)]
+
+    result = differential_evolution(
+        objective,
+        bounds,
+        tol=1e-9,
+        maxiter=3000,
+        polish=True
+    )
+
+    eps1_opt, eps2_opt, eps3_opt = result.x
+
+    # Compute actual fidelity at solution
+    U = (R(U1, theta1 + 2*eps1_opt) 
+         @ R(U2, theta2 + 2*eps2_opt) 
+         @ R(U3, theta3 + 2*eps3_opt))
+    Ut = R(U1, theta1) @ R(U2, theta2) @ R(U3, theta3)
+    inf = 1 - fidelity(Ut, U)
+
+    return {
+        "eps1": eps1_opt,
+        "eps2": eps2_opt,
+        "eps3": eps3_opt,
+        "r": np.sqrt(eps1_opt**2 + eps2_opt**2 + eps3_opt**2),
+        "infidelity": inf
+    }
 
 # Target angles
 theta1 = np.pi-np.arctan(np.sqrt(8))  # X rotation
-theta2 = np.arctan(np.sqrt(8))  # Y rotation
-n = -(X+ np.sqrt(3)*Z)/2 # this should be with a minus
+#theta2 = np.arctan(np.sqrt(8))  # n rotation
+theta2 = 0  # n rotation
+n = -(np.sqrt(3)*X+ Z)/2 # this should be with a minus
 
 
 errs = np.linspace(-0.007, 0.007, 150) 
@@ -81,9 +181,10 @@ F_xx = compute_2pulses(X,X,errs, errs, theta1, theta2)
 plot_heatmap(F_xx,title="Infidelity heatmap x,x rotation")
 
 
-errs = np.linspace(-0.0041, 0.0041, 150) 
+#errs = np.linspace(-0.0041, 0.0041, 150) 
+errs = np.linspace(-np.pi, np.pi, 150) 
 #znz rotation
-F_znz = compute_3pulses(Z,n,Z,errs, -4.1e-3, errs, theta1, theta2, theta1)
+F_znz = compute_3pulses(Z,n,Z,errs, 4.1e-3, errs, theta1, theta2, theta1)
 plot_heatmap(F_znz, title="Infidelity heatmap z,n,z rotation")
 
 errs = np.linspace(-0.0034, 0.0034, 150)  
@@ -91,5 +192,10 @@ errs = np.linspace(-0.0034, 0.0034, 150)
 F_znz = compute_3pulses(Z,Z,Z,errs, -3.4e-3, errs, theta1, theta2, theta1)
 plot_heatmap(F_znz, title="Infidelity heatmap z,z,z rotation")
 
+res = find_minimal_eps_2pulse_opt(Z, X, theta1, theta2)
+print(res)
+
+res_znz = find_minimal_eps_3pulse_opt(Z, X, Z, theta1, theta2, theta1)
+print(res_znz)
 
 plt.show()
