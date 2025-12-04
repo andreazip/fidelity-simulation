@@ -159,8 +159,8 @@ def find_minimal_eps_3pulse_opt(U1, U2, U3, theta1, theta2, theta3,
 
 # Target angles
 theta1 = np.pi-np.arctan(np.sqrt(8))  # X rotation
-#theta2 = np.arctan(np.sqrt(8))  # n rotation
-theta2 = 0  # n rotation
+theta2 = np.arctan(np.sqrt(8))  # n rotation
+#theta2 = 0  # n rotation
 n = -(np.sqrt(3)*X+ Z)/2 # this should be with a minus
 
 
@@ -181,10 +181,10 @@ F_xx = compute_2pulses(X,X,errs, errs, theta1, theta2)
 plot_heatmap(F_xx,title="Infidelity heatmap x,x rotation")
 
 
-#errs = np.linspace(-0.0041, 0.0041, 150) 
-errs = np.linspace(-np.pi, np.pi, 150) 
+errs = np.linspace(-0.0041, 0.0041, 150) 
+#errs = np.linspace(-np.pi, np.pi, 150) 
 #znz rotation
-F_znz = compute_3pulses(Z,n,Z,errs, 4.1e-3, errs, theta1, theta2, theta1)
+F_znz = compute_3pulses(n,Z,n, errs, 4.1e-3, errs, theta1, theta2, theta1)
 plot_heatmap(F_znz, title="Infidelity heatmap z,n,z rotation")
 
 errs = np.linspace(-0.0034, 0.0034, 150)  
@@ -195,7 +195,7 @@ plot_heatmap(F_znz, title="Infidelity heatmap z,z,z rotation")
 res = find_minimal_eps_2pulse_opt(Z, X, theta1, theta2)
 print(res)
 
-res_znz = find_minimal_eps_3pulse_opt(Z, X, Z, theta1, theta2, theta1)
+res_znz = find_minimal_eps_3pulse_opt(n, Z, n, theta1, theta2, theta1)
 print(res_znz)
 
 plt.show()

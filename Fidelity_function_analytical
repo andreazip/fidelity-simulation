@@ -25,6 +25,22 @@ def F(theta2, epsilon1, epsilon2, epsilon3):
 
     return (term1 + term2 + term3)**2
 
+
+def F_nzn(theta2, e1, e2, e3):
+    """
+    Computes:
+    F = [ cos(e1)cos(e3)
+          - (sin(e3)sin(e1)/4)*(3*cos(theta2) + cos(e2))
+          + (cos(e1 - e3)/2)*sin(e2)
+        ]^2
+    """
+    term1 = np.cos(e1) * np.cos(e3)  *np.cos(e2)
+    term2 = (np.sin(e3) * np.sin(e1) / 4) * (3 * np.cos(theta2 +e2) + np.cos(e2))
+    term3 = (np.sin(e1 + e3) / 2) * np.sin(e2)
+
+    F = (term1 - term2 + term3)**2
+    return F
+
 def F_x_x_x(epsilon1, epsilon2, epsilon3):
     return (np.cos(epsilon1+epsilon2+epsilon3))**2
 
@@ -61,13 +77,13 @@ def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", ti
 # Heatmap plotting
 # ----------------------------------------
 def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"):
-    Z = Z.copy()
-    # Compute infidelity
+    # Z = Z.copy()
+    # # Compute infidelity
     inf = 1 - Z
-    # Find smallest positive infidelity
-    nz_min = np.min(inf[inf > 0])
-    # Replace zeros in INFIDELITY
-    inf[inf == 0] = nz_min
+    # # Find smallest positive infidelity
+    # nz_min = np.min(inf[inf > 0])
+    # # Replace zeros in INFIDELITY
+    # inf[inf == 0] = nz_min
     plt.figure(figsize=(6,5))
     Z_plot = np.log10(inf)  # log of infidelity
     im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
@@ -200,7 +216,62 @@ def compute_z_n_z_fixed2():
                 xlabel="ε1",
                 ylabel="ε3",
                 title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
+    
+def compute_z_n_z_fixed3():
+    #Example usage for 3D fidelities (theta2-dependent)
+    theta2 = np.arctan(np.sqrt(8))
+    eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
+    eps3_fixed = 4.1e-3 #value used to validate formula
+    eps1 = np.linspace(*eps1_range, 150)
+    eps2 = np.linspace(*eps2_range, 150)
+    E1, E2 = np.meshgrid(eps1, eps2)
+    Z1 = F(theta2, E1, E2, eps3_fixed)
+    plot_surface_3d(E1, E2, Z1,
+                    xlabel="ε1",
+                    ylabel="ε2",
+                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
+    plot_heatmap(E1, E2, Z1,
+                xlabel="ε1",
+                ylabel="ε2",
+                title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+
+def compute_n_z_n_fixed2():
+    # tuning eps and fixing eps_2
+    theta2 =np.arctan(np.sqrt(8))
+    eps1_range = eps3_range = (-4.1e-3, 4.1e-3)
+    eps2_fixed = 4.1e-3
+    eps1 = np.linspace(*eps1_range, 150)
+    eps3 = np.linspace(*eps3_range, 150)
+    E1, E3 = np.meshgrid(eps1, eps3)
+    Z2 = F_nzn(theta2, E1, eps2_fixed, E3)
+    plot_surface_3d(E1, E3, Z2,
+                    xlabel="ε1",
+                    ylabel="ε3",
+                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
+    plot_heatmap(E1, E3, Z2,
+                xlabel="ε1",
+                ylabel="ε3",
+                title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
+
+def compute_n_z_n_fixed3():
+    #Example usage for 3D fidelities (theta2-dependent)
+    theta2 = np.arctan(np.sqrt(8))
+    eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
+    eps3_fixed = 4.1e-3 #value used to validate formula
+    eps1 = np.linspace(*eps1_range, 150)
+    eps2 = np.linspace(*eps2_range, 150)
+    E1, E2 = np.meshgrid(eps1, eps2)
+    Z1 = F_nzn(theta2, E1, E2, eps3_fixed)
+    plot_surface_3d(E1, E2, Z1,
+                    xlabel="ε1",
+                    ylabel="ε2",
+                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+
+    plot_heatmap(E1, E2, Z1,
+                xlabel="ε1",
+                ylabel="ε2",
+                title=f"Infidelity Heatmap 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
 def compute_z_z_z_fixed3():
     eps1_range = eps2_range = (-3.33e-3, 3.33e-3)
@@ -243,7 +314,7 @@ def worst_case_f(theta2, err_bound):
 
     def objective(x):
         e1, e2, e3 = x
-        return F(theta2, e1, e2, e3)
+        return F_nzn(theta2, e1, e2, e3)
 
     res = differential_evolution(objective, bounds, tol=1e-9)
     return res.fun, res.x  # (min fidelity, argmin parameters)
@@ -290,6 +361,10 @@ def main():
     # #znz rotation
     compute_z_n_z_fixed2() #fixing epsilon 2
     compute_z_n_z_fixed3() #fixing epsilon 3
+
+    # #nzn rotation
+    compute_n_z_n_fixed2() #fixing epsilon 2
+    compute_n_z_n_fixed3() #fixing epsilon 3
 
     # #zzz rotation
     # compute_z_z_z_fixed3() #centered where the argument of cos is 0
