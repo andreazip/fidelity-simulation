@@ -93,8 +93,3 @@ plot_heatmap(F_znz, title="Infidelity heatmap z,z,z rotation")
 
 
 plt.show()
-
-
-
-
-

@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from scipy.optimize import differential_evolution
 
 # ----------------------------------------
 # Fidelity functions
@@ -20,7 +21,7 @@ def F(theta2, epsilon1, epsilon2, epsilon3):
 
     term1 = (3/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2) * np.cos(delta_epsilon)
     term2 = (np.cos(theta2/2) * np.cos(theta2/2 + epsilon2) + (1/4) * np.sin(theta2/2) * np.sin(theta2/2 + epsilon2)) * np.cos(epsilon_tot)
-    term3 = -0.5 * np.sin(epsilon2) * np.sin(epsilon_tot)
+    term3 = 0.5 * np.sin(epsilon2) * np.sin(epsilon_tot)
 
     return (term1 + term2 + term3)**2
 
@@ -83,7 +84,7 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
     fig, axes = plt.subplots(1, len(theta_list), figsize=(5*len(theta_list), 4))
 
     for ax, theta2 in zip(axes, theta_list):
-        Z =1 - F(theta2, E1, E2, E3)
+        Z = 1 - F(theta2, E1, E2, E3)
         if fixed_3:
             im = ax.pcolormesh(E1, E2, np.log10(Z), shading='auto')
             ax.set_title(f"θ₂ = {theta2:.2f}")
@@ -222,10 +223,10 @@ def compute_different_theta():
     eps3_fixed= eps2_fixed= 4.1e-3
     eps1_range = eps2_range= eps3_range = (-np.pi*2, np.pi*2)
     eps1 = np.linspace(*eps1_range, 150)
-    eps2 = np.linspace(*eps2_range, 150)
+    eps2 = -np.linspace(*eps2_range, 150)
     eps3 = np.linspace(*eps3_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
-    theta_list = [0, np.pi/2, np.pi, 2*np.pi]
+    theta_list = [0, np.pi/4, np.pi/2, np.pi]
     #plot heatmaps for different theta and fixing epsilon 3
     plot_heatmaps_theta2(theta_list, E1, E2, eps3_fixed)
     # fixing epsilon 2
@@ -234,28 +235,76 @@ def compute_different_theta():
     #let's fix all epsilon equal and compute the heatmap for epsilon and theta
     plot_heatmap_theta_vs_epsilon(theta_range=(-np.pi*2, np.pi*2), epsilon_range=(-4e-3, 4e-3))
 
+def worst_case_f(theta2, err_bound):
+    """Compute minimum F over eps1, eps2, eps3 in [-err_bound, err_bound]"""
+    bounds = [(-err_bound, err_bound)] * 3
+
+    def objective(x):
+        e1, e2, e3 = x
+        return F(theta2, e1, e2, e3)
+
+    res = differential_evolution(objective, bounds, tol=1e-9)
+    return res.fun, res.x  # (min fidelity, argmin parameters)
+
+
+def find_minimal_error_threshold(theta2, target_infidelity=1e-4, e_max=0.5):
+    """
+    Find the smallest error amplitude e for which the condition
+        1 - F_min(e) > target_infidelity
+    is exceeded.
+
+    Returns:
+        e_star: minimal error amplitude
+        F_min: worst-case fidelity at e_star
+        params: eps1, eps2, eps3 that produce F_min
+    """
+
+    # increasing e search (binary search for speed)
+    low, high = 0.0, e_max
+
+    for _ in range(30):  # ~1e-6 precision on e
+        mid = 0.5 * (low + high)
+
+        F_min, params = worst_case_f(theta2, mid)
+
+        if 1 - F_min > target_infidelity:
+            high = mid  # too much error → reduce search interval
+        else:
+            low = mid   # still acceptable → need bigger errors
+
+    return high, F_min, params
+
 def main():
-    #xz rotation
-    compute_x_z()
+    # #xz rotation
+    # compute_x_z()
 
-    #nz rotation        
-    compute_n_z()
+    # #nz rotation        
+    # compute_n_z()
 
-    ##zz rotation
-    compute_x_x() #xx same as zz
-    plt.show()
+    # ##zz rotation
+    # compute_x_x() #xx same as zz
+    # plt.show()
 
-    #znz rotation
-    compute_z_n_z_fixed2() #fixing epsilon 2
-    compute_z_n_z_fixed3() #fixing epsilon 3
+    # #znz rotation
+    # compute_z_n_z_fixed2() #fixing epsilon 2
+    # compute_z_n_z_fixed3() #fixing epsilon 3
 
-    #zzz rotation
-    compute_z_z_z_fixed3() #centered where the argument of cos is 0
-    plt.show()
+    # #zzz rotation
+    # compute_z_z_z_fixed3() #centered where the argument of cos is 0
+    # plt.show()
 
     # understand evoution with theta
     compute_different_theta()
     plt.show()
 
 main()
-        
+
+#theta2 = np.arctan(np.sqrt(8)) # example
+theta2 =np.pi
+
+e_star, F_min_star, params_star = find_minimal_error_threshold(theta2)
+
+print("Minimal e* =", e_star)
+print("At this error, worst-case F =", F_min_star)
+print("So 1 - F =", 1 - F_min_star)
+print("Error values producing failure:", params_star)
