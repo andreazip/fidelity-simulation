@@ -31,8 +31,8 @@ def rc_pulse(t, t_start, t_end, amp, tau):
     if t < t_start or t > t_end:
         return 0.0
 
-    t_rise_end = t_start + 5*tau
-    t_fall_start = t_end - 5*tau
+    t_rise_end = t_start + 7*tau
+    t_fall_start = t_end - 7*tau
 
     if t < t_rise_end:
         # Rising edge
@@ -100,8 +100,8 @@ def run_exchange_qubit_simulation(
         t2 = theta2/J23_amp_id + (t_rise + t_fall)/2
         t_total = t1 + t2 + t1 
     elif pulse_type == "RC":
-        t1 = theta1/J12_amp_id + 5*tau #-2*(np.exp(-5*tau**2-1))/tau
-        t2 = theta2/J23_amp_id + 5*tau #-2*(np.exp(-5*(tau**2)-1))/tau
+        t1 = theta1/J12_amp_id + 7*tau #-2*(np.exp(-5*tau**2-1))/tau
+        t2 = theta2/J23_amp_id + 7*tau #-2*(np.exp(-5*(tau**2)-1))/tau
         t_total = t1 + t2 + t1
 
     # Pulse timing
@@ -175,20 +175,24 @@ def run_exchange_qubit_simulation(
 
     return f
 
-# fidelity = run_exchange_qubit_simulation(
-#     J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#     deltaV=0.0,
-#     pulse_type="RC",
-#     t_rise = 1e-9,
-#     t_fall = 1e-9,
-#     deltat=0.0,
-#     tau = 0.1e-9, 
-#     plot_bloch=True,
-#     plot_pulse=True,
 
-# )
+pulse_types = ["square", "linear", "RC"]
+#calibration step
+for pulse_type in pulse_types:
+    fidelity = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV=0.0,
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat=0.0,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse=True,
+    )
+    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
 
-# print(f"Final fidelity: {fidelity*100:.5f}%")
+
 
 # --- Sweep parameters ---
 delta_t_list = np.linspace(-50e-12, 50e-12, 50)
@@ -231,9 +235,20 @@ for ax, pulse_type in zip(axes, pulse_types):
                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
                    aspect='auto')
     ax.set_title(f"{pulse_type.capitalize()} pulse")
-    ax.set_ylabel("Δt [ps]", labelpad=5)  # default is ~10
-    ax.set_xlabel("ΔV [mV]", labelpad=5)
+    ax.set_ylabel("Δt [ps]", labelpad=2)  
+    ax.set_xlabel("ΔV [mV]", labelpad=2)
     fig.colorbar(im, ax=ax, label="Infidelity")
-    
-plt.tight_layout()
+
+for pulse_type in pulse_types:
+    plt.figure(figsize=(6,5))
+    im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
+                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+                    aspect='auto')
+    plt.title(f"{pulse_type.capitalize()} pulse")
+    plt.xlabel("ΔV [mV]", labelpad=2)
+    plt.ylabel("Δt [ps]", labelpad=2)
+    plt.colorbar(im, label="Infidelity")
+    plt.grid(False)
+
 plt.show()
