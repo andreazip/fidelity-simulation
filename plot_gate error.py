@@ -36,7 +36,7 @@ def plot_delta_t(f_osc=None, scale_factor=314, show_grid=True):
 # ----------------------------------------
 # Function to plot delta_V vs theta
 # ----------------------------------------
-def plot_delta_V(theta=None, scale_factor=5000, show_grid=True):
+def plot_delta_V(theta=None, scale_factor=2500, show_grid=True):
     """
     Plot ΔV vs rotation angle theta.
 
@@ -67,7 +67,7 @@ def plot_delta_V(theta=None, scale_factor=5000, show_grid=True):
     # Δt_gate plot (left subplot)
  # ----------------------------------------
 
-def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 770, 942], scale_delta_V = [5000, 50000/7, 25000/3, 10000, 625000/51, 14992]):
+def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 770, 942], scale_delta_V = [2500, 25000/7, 12500/3, 5000, 312500/51, 7496]):
     # Define oscillation frequencies and theta values
     if theta is None:
         theta = np.linspace(0.1, 2, 200)  # rad
@@ -77,7 +77,7 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
 
 
     # Labels for each case
-    labels = ['single rotation','x-z rotation', 'n-z rotation','z-z rotation', 'z-n-z rotation','z-z-z rotation']
+    labels = ['single rotation','x-z rotation', 'n-z rotation','z-z rotation', 'n-z-n rotation','z-z-z rotation']
 
     # ----------------------------------------
     # Δt_gate plot (left subplot)
