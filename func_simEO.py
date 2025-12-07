@@ -82,7 +82,7 @@ def run_exchange_qubit_simulation(
     psi_target = basis(2,0)
 
     # --- Compute exchange values ---
-    J12_amp = np.exp(alpha*(V1 + deltaV)) * J_offset * 2*np.pi
+    J12_amp = np.exp(alpha*(V1 - deltaV)) * J_offset * 2*np.pi
     J23_amp = np.exp(alpha*(V2 + deltaV)) * J_offset * 2*np.pi
 
     J12_amp_id = np.exp(alpha*(V1)) * J_offset * 2*np.pi
@@ -100,8 +100,8 @@ def run_exchange_qubit_simulation(
         t2 = theta2/J23_amp_id + (t_rise + t_fall)/2
         t_total = t1 + t2 + t1 
     elif pulse_type == "RC":
-        t1 = theta1/J12_amp_id + 7*tau #-2*(np.exp(-5*tau**2-1))/tau
-        t2 = theta2/J23_amp_id + 7*tau #-2*(np.exp(-5*(tau**2)-1))/tau
+        t1 = theta1/J12_amp_id + 7*tau -2*(np.exp(-5*((tau)**2))/tau -1/tau)
+        t2 = theta2/J23_amp_id + 7*tau -2*(np.exp(-5*((tau)**2))/tau -1/tau)
         t_total = t1 + t2 + t1
 
     # Pulse timing
@@ -111,31 +111,31 @@ def run_exchange_qubit_simulation(
 
     # Parameter list passed into pulse generator
     if pulse_type == "square":
-        J12_params = [(t_start2 - deltat, t_end2 + deltat, J12_amp)]
+        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2, J12_amp)]
         J23_params = [
-        (t_start1 - deltat, t_end1 + deltat, J23_amp),
-        (t_start3 - deltat, t_end3 + deltat, J23_amp)
+        (t_start1 - deltat/2, t_end1 + deltat/2, J23_amp),
+        (t_start3 - deltat/2, t_end3 + deltat/2, J23_amp)
         ]
     elif pulse_type == "linear":
-        J12_params = [(t_start2 - deltat, t_end2 + deltat, J12_amp, t_rise, t_fall)]
+        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2, J12_amp, t_rise, t_fall)]
         J23_params = [
-        (t_start1 - deltat, t_end1 + deltat, J23_amp, t_rise, t_fall),
-        (t_start3 - deltat, t_end3 + deltat, J23_amp, t_rise, t_fall)
+        (t_start1 - deltat/2, t_end1 + deltat/2, J23_amp, t_rise, t_fall),
+        (t_start3 - deltat/2, t_end3 + deltat/2, J23_amp, t_rise, t_fall)
         ]
     elif pulse_type == "RC":
             # ----------- J12 pulse (middle pulse) -----------
         # J12 pulse (middle pulse)
         J12_params = [
             # RC rise
-            (t_start2 - deltat, t_end2 + deltat,J12_amp, tau),
+            (t_start2 + deltat/2, t_end2 - deltat/2,J12_amp, tau),
         ]
 
         # J23 pulses (first and last pulse)
         J23_params = [
             # First pulse rise
-            (t_start1 - deltat, t_end1 + deltat, J23_amp, tau),
+            (t_start1 - deltat/2, t_end1 + deltat/2, J23_amp, tau),
             # Second pulse rise
-            (t_start3 - deltat, t_end3 + deltat, J23_amp, tau),
+            (t_start3 - deltat/2, t_end3 + deltat/2, J23_amp, tau),
         ]
 
 
@@ -148,7 +148,7 @@ def run_exchange_qubit_simulation(
         return -0.5 * (J12_func(t) * sz - 0.5 * J23_func(t) * (sz + np.sqrt(3)*sx))
 
     # Time evolution
-    tlist = np.linspace(-10*deltat, t_total+10*deltat, 400)
+    tlist = np.linspace(-1e-9, t_total+1e-9, 400)
     result = sesolve(H, psi0, tlist)
 
     # Fidelity
@@ -167,8 +167,8 @@ def run_exchange_qubit_simulation(
         J12_vals = [J12_func(t)/2/np.pi/1e6 for t in tlist]
         J23_vals = [J23_func(t)/2/np.pi/1e6 for t in tlist]
         plt.figure()
-        plt.plot(tlist, J12_vals, label="J12(t) [MHz]")
-        plt.plot(tlist, J23_vals, label="J23(t) [MHz]")
+        plt.plot(tlist*1e9, J12_vals, label="J12(t) [MHz]")
+        plt.plot(tlist*1e9, J23_vals, label="J23(t) [MHz]")
         plt.legend()
         plt.title("Pulse Sequence")
         plt.show()
@@ -192,11 +192,43 @@ for pulse_type in pulse_types:
     )
     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
 
+#check deltat
+for pulse_type in pulse_types:
+    fidelity = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV=0.0,
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat= 13e-12,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse=False,
+    )
+    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+
+#check deltaV
+for pulse_type in pulse_types:
+    fidelity = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV= 0.085e-3, 
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat= 0,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse=False,
+    )
+    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
 
 
 # --- Sweep parameters ---
-delta_t_list = np.linspace(-50e-12, 50e-12, 50)
-delta_V_list = np.linspace(-0.1e-3, 0.1e-3, 50)
+#delta_t_list = np.linspace(-50e-12, 50e-12, 50)
+#delta_V_list = np.linspace(-0.1e-3, 0.1e-3, 50)
+
+delta_t_list = np.linspace(-100e-12, 100e-12, 200)
+delta_V_list = np.linspace(-0.2e-3, 0.2e-3, 200)
 
 pulse_types = ["square", "linear", "RC"]
 infidelity_maps = {}

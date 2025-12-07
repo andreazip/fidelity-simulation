@@ -15,12 +15,12 @@ sz = sigmaz()
 J_offset = 10e3 
 V1 = 184e-3
 V2 = 184e-3
-deltaV = 2*0.067e-3
+deltaV = 0.085e-3
 #deltaV = 0
 alpha = 50
 
 # Exchange amplitudes
-J12_amp = np.exp(alpha*(V1+deltaV))*J_offset *2*np.pi #in rad/s
+J12_amp = np.exp(alpha*(V1-deltaV))*J_offset *2*np.pi #in rad/s
 J23_amp = np.exp(alpha*(V2+deltaV))*J_offset *2*np.pi
 J12_amp_id = np.exp(alpha*(V1))*J_offset *2*np.pi #in rad/s
 J23_amp_id = np.exp(alpha*(V2))*J_offset *2*np.pi
@@ -28,7 +28,7 @@ J23_amp_id = np.exp(alpha*(V2))*J_offset *2*np.pi
 theta1 = np.pi - np.arctan(np.sqrt(8))
 theta2 = np.arctan(np.sqrt(8))
 
-# deltat = 13e-12
+#deltat = -13e-12
 deltat = 0
 
 # Gate durations
@@ -69,12 +69,12 @@ def linear_pulse(t, t_start, t_end, amp, rise_time=0.0, fall_time=0.0):
 # ============================================================
 J12_pulses = [
     # (t_start, t_end, amplitude, rise, fall)
-    (t_start2 - deltat, t_end2 + deltat, J12_amp, 0, 0)
+    (t_start2 + deltat/2, t_end2 - deltat/2, J12_amp, 0, 0)
 ]
 
 J23_pulses = [
-    (t_start1 - deltat, t_end1 + deltat, J23_amp, 0, 0),
-    (t_start3 - deltat, t_end3 + deltat, J23_amp, 0, 0)
+    (t_start1 - deltat/2, t_end1 + deltat/2, J23_amp, 0, 0),
+    (t_start3 - deltat/2, t_end3 + deltat/2, J23_amp, 0, 0)
 ]
 
 # ============================================================
@@ -130,7 +130,7 @@ psi_target = basis(2,0)
 #   TIME EVOLUTION
 # ============================================================
 t_total = tgate_2 + 2*tgate_1
-tlist = np.linspace(-deltat, t_total+deltat, 500)
+tlist = np.linspace(-1e-9, t_total+1e-9, 500)
 
 result = sesolve(H_func, psi0, tlist)
 
