@@ -1,0 +1,73 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.signal import welch
+
+# Parameters
+fs = 1e12     # Sampling frequency [Hz]
+T = 1e-8      # Duration [s]
+N = int(T * fs)
+
+# White noise generator
+def white_noise(N):
+    return np.random.randn(N)
+
+# 1/f pink noise generator (frequency domain shaping)
+def pink_noise_1_f(N):
+    # Frequency indices
+    freqs = np.fft.rfftfreq(N, 1/fs)
+    # Avoid division by zero at DC
+    freqs[0] = freqs[1]
+    
+    # Generate random phases
+    phases = np.exp(1j * 2 * np.pi * np.random.rand(len(freqs)))
+    # 1/sqrt(f) amplitude scaling for pink noise
+    amplitude = 1 / np.sqrt(freqs)
+    
+    # Construct frequency-domain signal
+    X = amplitude * phases
+    # Convert to time domain
+    x = np.fft.irfft(X, n=N)
+    # # Normalize
+    # x = (x - np.mean(x)) / np.std(x)
+    return x
+
+# Generate signals
+White_amp = 0.0018
+Pink_amp = 0.0018
+
+wn = White_amp * white_noise(N)
+pn = Pink_amp * pink_noise_1_f(N)
+
+# Compute PSD using Welch's method
+f_wn, Pxx_wn = welch(wn, fs, nperseg=1024)
+f_pn, Pxx_pn = welch(pn, fs, nperseg=1024)
+
+# Plot time-domain signals
+plt.figure(figsize=(12, 6))
+plt.subplot(2, 2, 1)
+plt.plot(np.arange(N)/fs, wn, color='blue')
+plt.title("White Noise - Time Domain")
+plt.xlabel("Time [s]")
+plt.ylabel("Amplitude")
+
+plt.subplot(2, 2, 2)
+plt.plot(np.arange(N)/fs, pn, color='red')
+plt.title("Pink Noise (1/f) - Time Domain")
+plt.xlabel("Time [s]")
+plt.ylabel("Amplitude")
+
+# Plot PSD
+plt.subplot(2, 2, 3)
+plt.semilogy(f_wn, Pxx_wn, color='blue')
+plt.title("White Noise - PSD")
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("Power Spectral Density")
+
+plt.subplot(2, 2, 4)
+plt.semilogy(f_pn, Pxx_pn, color='red')
+plt.title("Pink Noise (1/f) - PSD")
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("Power Spectral Density")
+
+plt.tight_layout()
+plt.show()

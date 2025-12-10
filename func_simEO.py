@@ -16,10 +16,12 @@ def square_pulse(t, t_start, t_end, amp, alpha = 50, J_offset =10e3, white_func=
     if pink_func is not None:
         noise += pink_func(t)
 
+    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
+    ## J_noise is extremely small, should we plot J_amp - J_noise?
     amp = amp + noise
     J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
     
-    return J_amp if (t_start <= t <= t_end) else np.exp(alpha*(noise)) * J_offset * 2*np.pi
+    return J_amp if (t_start <= t <= t_end) else J_noise
 
 def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, alpha = 50, J_offset =10e3, white_func= None, pink_func= None):
     noise = 0
@@ -28,17 +30,18 @@ def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, alpha = 50, J_offse
     if pink_func is not None:
         noise += pink_func(t)
 
+    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
     amp = amp + noise
     J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
     if t < t_start:
-        return 0
+        return J_noise
     if t_start <= t < t_start + rise:
         return J_amp * (t - t_start)/rise if rise>0 else amp
     if t_start + rise <= t <= t_end - fall:
         return J_amp
     if t_end - fall < t <= t_end:
         return J_amp * (1 - (t - (t_end - fall))/fall) if fall>0 else amp
-    return 0
+    return J_noise
 
 def rc_pulse(t, t_start, t_end, amp, tau, alpha = 50, J_offset =10e3, white_func= None, pink_func= None):
     """
@@ -53,10 +56,11 @@ def rc_pulse(t, t_start, t_end, amp, tau, alpha = 50, J_offset =10e3, white_func
     if pink_func is not None:
         noise += pink_func(t)
 
+    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
     amp = amp + noise
     J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
     if t < t_start or t > t_end:
-        return 0.0
+        return J_noise
 
     t_rise_end = t_start + 7*tau
     t_fall_start = t_end - 7*tau
@@ -141,13 +145,18 @@ def run_exchange_qubit_simulation(
 
     #define noise
     N = len(tlist)
+    fs = N/(t_total + 2e-9)
     
     # Generate noises
-    x_white = white_noise(N) * white_amp
-    x_pink  = pink_noise(N) * pink_amp
+    x_white, _ = noise_psd( t_total+2e-9, fs,  psd_func=lambda f: white_psd(f))
+    x_pink, _  = noise_psd( t_total+2e-9, fs,  psd_func=lambda f: pink_psd(f))
 
-    white_func = partial(noise_function, tlist=tlist, noise_array=x_white)
-    pink_func  = partial(noise_function, tlist=tlist, noise_array=x_pink)
+    x_white = x_white * white_amp
+    x_pink = x_pink * pink_amp
+
+    # Create interpolated noise functions
+    white_func = lambda t: np.interp(t, tlist, x_white)
+    pink_func  = lambda t: np.interp(t, tlist, x_pink)
 
     # Parameter list passed into pulse generator
     if pulse_type == "square":
@@ -217,60 +226,65 @@ def run_exchange_qubit_simulation(
 
     return f
 
-def noise_psd(N, psd_func=lambda f: 1):
-    # Generate white noise in frequency domain
-    X_white = np.fft.rfft(np.random.randn(N))
-    
-    f = np.fft.rfftfreq(N)
-    S = psd_func(f)
-    S = S / np.sqrt(np.mean(S**2))   # optional normalization
-    
-    # Apply amplitude shaping (sqrt(PSD))
-    X_shaped = X_white * np.sqrt(S)
-    
-    # Transform back to time domain
-    x = np.fft.irfft(X_shaped, n=N)
-    
-    return x
+def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
+        N = int(T * fs)
+        N = N + 1
+        freqs = np.fft.rfftfreq(N,1/fs)
+        freqs[0] = freqs[1]
+        
+        X_white = np.fft.rfft(np.random.randn(N));
 
-def PSDGenerator(psd_func):
-    return lambda N: noise_psd(N, psd_func)
+        S = psd_func(freqs)
+        # Normalize S
+        S =  S / np.sqrt(np.mean(S**2))
+        
 
-@PSDGenerator
-def white_noise(f):
+        X_shaped = X_white * S
+
+        N = N - 1
+        x = np.fft.irfft(X_shaped)[0:N]
+
+        return x, S
+
+# PSD functions
+def white_psd(f):
     return np.ones_like(f)
 
-@PSDGenerator
-def pink_noise(f):
+def pink_psd(f):
     return 1 / np.where(f == 0, float('inf'), np.sqrt(f))
 
-# --- Plotting function ---
-def plot_noises(N=1000, pink_amp=0.1, white_amp=0.1, seed=None):
-    if seed is not None:
-        np.random.seed(seed)
-    
-    t = np.arange(N)
-    
-    # Generate noises
-    x_white = white_noise(N) * white_amp
-    x_pink  = pink_noise(N) * pink_amp
-    
-    # Plot
-    plt.figure(figsize=(12,5))
-    
-    plt.plot(t, x_white, label="White Noise")
-    plt.plot(t, x_pink, label="Pink Noise (1/f)", alpha=0.8)
-    
-    plt.xlabel("Sample index")
-    plt.ylabel("Amplitude")
-    plt.title("Comparison of White Noise and Pink Noise")
+
+def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
+    N = len(x1)
+    t = np.arange(N) / fs
+
+    # Frequency axis for PSD
+    N = N + 1
+    f = np.fft.rfftfreq(N, 1/fs) 
+
+    # Plot time-domain signals
+    plt.figure(figsize=(12,4))
+    plt.plot(t, x1*1e3, label=labels[0], color='blue')
+    plt.plot(t, x2*1e3, label=labels[1], color='red')
+    plt.title("Time Domain")
+    plt.xlabel("Time [s]")
+    plt.ylabel("Amplitude [mV]")
     plt.legend()
     plt.grid(True)
-    plt.show()
+
+    # Plot PSDs
+    plt.figure(figsize=(12,4))
+    plt.semilogy(f[1:], S1[1:], label=labels[0], color='blue')  # skip DC
+    plt.semilogy(f[1:], S2[1:], label=labels[1], color='red')
+    plt.title("Power Spectral Density")
+    plt.xlabel("Frequency [Hz]")
+    plt.ylabel("PSD")
+    plt.legend()
+    plt.grid(True)
 
 
-def noise_function(t, tlist, noise_array):
-    return np.interp(t, tlist, noise_array)
+# def noise_function(t, tlist, noise_array):
+#     return np.interp(t, tlist, noise_array)
 
 # # --- Example usage ---
 # plot_noises(N=2000, pink_amp=1, white_amp=1, seed=42)
@@ -287,7 +301,7 @@ pulse_types = ["square", "linear", "RC"]
 #         deltat=0.0,
 #         tau = 0.1e-9, 
 #         plot_bloch=False,
-#         plot_pulse=False,
+#         plot_pulse=True,
 #         white_amp = 0,
 #         pink_amp = 0,
 #     )
@@ -327,6 +341,26 @@ pulse_types = ["square", "linear", "RC"]
 #     )
 #     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
 
+# #check noise
+for pulse_type in pulse_types:
+     fidelity = run_exchange_qubit_simulation(
+            J_offset = 10e3,
+            V1 = 184e-3,
+            V2 = 184e-3,
+            alpha = 50,
+            deltaV = 0,
+            pulse_type = pulse_type,
+            t_rise = 1e-9,
+            t_fall = 1e-9,
+            deltat = 0,
+            tau = 0.1e-9,
+            plot_bloch = False,
+            plot_pulse = True,  
+            white_amp = 0.0018,
+            pink_amp = 0,
+        )
+     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+
 #check pink noise
 iterations = 200
 
@@ -364,35 +398,35 @@ fidelity_stds = {}
 #     print(f"{pulse_type}: Mean fidelity = {fidelity_means[pulse_type]*100:.5f}%, "
 #           f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
 
-for pulse_type in pulse_types:
-    fidelities = []
+# for pulse_type in pulse_types:
+#     fidelities = []
 
-    for _ in range(iterations):
-        fidelity = run_exchange_qubit_simulation(
-            J_offset = 10e3,
-            V1 = 184e-3,
-            V2 = 184e-3,
-            alpha = 50,
-            deltaV = 0.085e-3,
-            pulse_type = pulse_type,
-            t_rise = 1e-9,
-            t_fall = 1e-9,
-            deltat = 0,
-            tau = 0.1e-9,
-            plot_bloch = False,
-            plot_pulse = False,  # avoid plotting in every iteration
-            white_amp = 0,
-            pink_amp = 0.0018,
-        )
-        fidelities.append(fidelity)
+#     for _ in range(iterations):
+#         fidelity = run_exchange_qubit_simulation(
+#             J_offset = 10e3,
+#             V1 = 184e-3,
+#             V2 = 184e-3,
+#             alpha = 50,
+#             deltaV = 0.085e-3,
+#             pulse_type = pulse_type,
+#             t_rise = 1e-9,
+#             t_fall = 1e-9,
+#             deltat = 0,
+#             tau = 0.1e-9,
+#             plot_bloch = False,
+#             plot_pulse = False,  # avoid plotting in every iteration
+#             white_amp = 0,
+#             pink_amp = 0.0016,
+#         )
+#         fidelities.append(fidelity)
 
-    # Compute mean and std
-    fidelities = np.array(fidelities)
-    fidelity_means[pulse_type] = np.mean(fidelities)
-    fidelity_stds[pulse_type] = np.std(fidelities)
+#     # Compute mean and std
+#     fidelities = np.array(fidelities)
+#     fidelity_means[pulse_type] = np.mean(fidelities)
+#     fidelity_stds[pulse_type] = np.std(fidelities)
 
-    print(f"{pulse_type}: Mean fidelity = {fidelity_means[pulse_type]*100:.5f}%, "
-          f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
+#     print(f"{pulse_type}: Mean fidelity = {fidelity_means[pulse_type]*100:.5f}%, "
+#           f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
     
 # --- Sweep parameters ---
 #delta_t_list = np.linspace(-50e-12, 50e-12, 50)
