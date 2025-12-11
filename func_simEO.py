@@ -257,7 +257,7 @@ def white_psd(f):
     return np.ones_like(f)
 
 def pink_psd(f):
-    return 1 / np.where(f == 0, float('inf'), np.sqrt(f))
+    return 1 / np.where(f == 0, float('inf'), f)
 
 
 def plot_noise_func(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
@@ -407,135 +407,258 @@ pulse_types = ["square", "linear", "RC"]
 #     print(f"{pulse_type}: Mean fidelity = {fidelity_means[pulse_type]*100:.5f}%, "
 #           f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
 
-#plot effect of flicker noise and thermal noise
-white_amps = np.linspace(0, 0.0015, 10)  # example range for white noise
-pink_amps = np.linspace(0, 0.0015, 10)   # example range for pink noise
-iterations = 100
+# #plot effect of flicker noise and thermal noise
+# white_amps = np.linspace(0, 0.0015, 10)  # example range for white noise
+# pink_amps = np.linspace(0, 0.0015, 10)   # example range for pink noise
+# iterations = 100
 
-# Dictionaries to store results
-infidelity_white = {pulse: [] for pulse in pulse_types}
-infidelity_white_std = {pulse: [] for pulse in pulse_types}
-infidelity_pink = {pulse: [] for pulse in pulse_types}
-infidelity_pink_std = {pulse: [] for pulse in pulse_types}
+# # Dictionaries to store results
+# infidelity_white = {pulse: [] for pulse in pulse_types}
+# infidelity_white_std = {pulse: [] for pulse in pulse_types}
+# infidelity_pink = {pulse: [] for pulse in pulse_types}
+# infidelity_pink_std = {pulse: [] for pulse in pulse_types}
 
-# Simulation loop
-# from previous simulation, se deltat = 4ps and delta V = 0.04 mV
-for pulse in tqdm(pulse_types, desc="Pulse types"):
-    # White noise sweep
-    for w_amp in tqdm(white_amps, desc=f"{pulse} - White noise", leave=False):
-        fidelities = []
-        for _ in range(iterations):
-            fidelity = run_exchange_qubit_simulation(
-                J_offset=10e3,
-                V1=184e-3,
-                V2=184e-3,
-                alpha=50,
-                deltaV=0,
-                pulse_type=pulse,
-                t_rise=1e-9,
-                t_fall=1e-9,
-                deltat=0,
-                tau=0.1e-9,
-                plot_bloch=False,
-                plot_pulse=False,
-                plot_noise=False,
-                white_amp=w_amp,
-                pink_amp=0,
-            )
-            fidelities.append(fidelity)
-        fidelities = np.array(fidelities)
-        infidelity_white[pulse].append(1 - np.mean(fidelities))
-        infidelity_white_std[pulse].append(np.std(1 - fidelities))
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     # White noise sweep
+#     for w_amp in tqdm(white_amps, desc=f"{pulse} - White noise", leave=False):
+#         fidelities = []
+#         for _ in range(iterations):
+#             fidelity = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV=0,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat=0,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 white_amp=w_amp,
+#                 pink_amp=0,
+#             )
+#             fidelities.append(fidelity)
+#         fidelities = np.array(fidelities)
+#         infidelity_white[pulse].append(1 - np.mean(fidelities))
+#         infidelity_white_std[pulse].append(np.std(1 - fidelities))
     
-    # Pink noise sweep
-    for p_amp in tqdm(pink_amps, desc=f"{pulse} - Pink noise", leave=False):
-        fidelities = []
-        for _ in range(iterations):
-            fidelity = run_exchange_qubit_simulation(
-                J_offset=10e3,
-                V1=184e-3,
-                V2=184e-3,
-                alpha=50,
-                deltaV=0,
-                pulse_type=pulse,
-                t_rise=1e-9,
-                t_fall=1e-9,
-                deltat=0,
-                tau=0.1e-9,
-                plot_bloch=False,
-                plot_pulse=False,
-                plot_noise=False,
-                white_amp=0,
-                pink_amp=p_amp,
-            )
-            fidelities.append(fidelity)
-        fidelities = np.array(fidelities)
-        infidelity_pink[pulse].append(1 - np.mean(fidelities))
-        infidelity_pink_std[pulse].append(np.std(1 - fidelities))
+#     # Pink noise sweep
+#     for p_amp in tqdm(pink_amps, desc=f"{pulse} - Pink noise", leave=False):
+#         fidelities = []
+#         for _ in range(iterations):
+#             fidelity = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV=0,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat=0,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 white_amp=0,
+#                 pink_amp=p_amp,
+#             )
+#             fidelities.append(fidelity)
+#         fidelities = np.array(fidelities)
+#         infidelity_pink[pulse].append(1 - np.mean(fidelities))
+#         infidelity_pink_std[pulse].append(np.std(1 - fidelities))
 
-#saving data
-np.savez("infidelity_results.npz",
-         infidelity_white = infidelity_white,
-         infidelity_pink = infidelity_pink,
-         infidelity_white_std = infidelity_white_std,
-         infidelity_pink_std = infidelity_pink_std,
-         white_amps=white_amps,
-         pink_amps=pink_amps,
-         pulse_types=pulse_types)
+# #saving data
+# np.savez("infidelity_results.npz",
+#          infidelity_white = infidelity_white,
+#          infidelity_pink = infidelity_pink,
+#          infidelity_white_std = infidelity_white_std,
+#          infidelity_pink_std = infidelity_pink_std,
+#          white_amps=white_amps,
+#          pink_amps=pink_amps,
+#          pulse_types=pulse_types)
 
-# #load data
-# data = np.load("infidelity_results.npz", allow_pickle=True)
+# # #load data
+# # data = np.load("infidelity_results.npz", allow_pickle=True)
 
-# infidelity_white = data["infidelity_white"].item()
-# infidelity_white_std = data["infidelity_white_std"].item()
-# infidelity_pink = data["infidelity_pink"].item()
-# infidelity_pink_std = data["infidelity_pink_std"].item()
-# white_amps = data["white_amps"]
-# pink_amps = data["pink_amps"]
-# pulse_types = data["pulse_types"]
+# # infidelity_white = data["infidelity_white"].item()
+# # infidelity_white_std = data["infidelity_white_std"].item()
+# # infidelity_pink = data["infidelity_pink"].item()
+# # infidelity_pink_std = data["infidelity_pink_std"].item()
+# # white_amps = data["white_amps"]
+# # pink_amps = data["pink_amps"]
+# # pulse_types = data["pulse_types"]
 
-# Plotting
-plt.figure(figsize=(10,6))
+# # Plotting
+# plt.figure(figsize=(10,6))
 
-colors = {"square":"blue", "linear":"green", "RC":"red"}
+# colors = {"square":"blue", "linear":"green", "RC":"red"}
 
-# White noise lines
-for pulse in pulse_types:
-    plt.plot(white_amps*1e3, infidelity_white[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
-    plt.bar(
-    white_amps*1e3,
-    2 * np.array(infidelity_white_std[pulse]),                # full height = 2σ
-    bottom=(np.array(infidelity_white[pulse]) - np.array(infidelity_white_std[pulse])) ,         # center bar on the mean
-    width=0.2*(white_amps[1]-white_amps[0])*1e3,    # adjust width
-    alpha=0.3,
-    color='grey',
-)
-# Pink noise lines
-for pulse in pulse_types:
-    plt.plot(pink_amps*1e3, infidelity_pink[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
-    plt.bar(
-    pink_amps*1e3,
-    2 * np.array(infidelity_pink_std[pulse]),                # full height = 2σ
-    bottom=(np.array(infidelity_pink[pulse]) - np.array(infidelity_pink_std[pulse])) ,         # center bar on the mean
-    width=0.1*(pink_amps[1]-pink_amps[0])*1e3,    # adjust width
-    alpha=0.3,
-    color='orange',
-)
+# # White noise lines
+# for pulse in pulse_types:
+#     plt.plot(white_amps*1e3, infidelity_white[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
+#     plt.bar(
+#     white_amps*1e3,
+#     2 * np.array(infidelity_white_std[pulse]),                # full height = 2σ
+#     bottom=(np.array(infidelity_white[pulse]) - np.array(infidelity_white_std[pulse])) ,         # center bar on the mean
+#     width=0.2*(white_amps[1]-white_amps[0])*1e3,    # adjust width
+#     alpha=0.3,
+#     color='grey',
+# )
+# # Pink noise lines
+# for pulse in pulse_types:
+#     plt.plot(pink_amps*1e3, infidelity_pink[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
+#     plt.bar(
+#     pink_amps*1e3,
+#     2 * np.array(infidelity_pink_std[pulse]),                # full height = 2σ
+#     bottom=(np.array(infidelity_pink[pulse]) - np.array(infidelity_pink_std[pulse])) ,         # center bar on the mean
+#     width=0.1*(pink_amps[1]-pink_amps[0])*1e3,    # adjust width
+#     alpha=0.3,
+#     color='orange',
+# )
 
-# Threshold line
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("Noise Amplitude [mV]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')  # log scale is useful for small infidelities
-plt.title("Infidelity vs Noise Amplitude for Different Pulses")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-plt.show()
+# # Threshold line
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("Noise Amplitude [mV]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')  # log scale is useful for small infidelities
+# plt.title("Infidelity vs Noise Amplitude for Different Pulses")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# plt.show()
+
+# #plot effect of flicker noise and thermal noise
+# white_amps = np.linspace(0, 0.0015, 10)  # example range for white noise
+# pink_amps = np.linspace(0, 0.0015, 10)   # example range for pink noise
+# iterations = 100
+
+# # Dictionaries to store results
+# infidelity_white = {pulse: [] for pulse in pulse_types}
+# infidelity_white_std = {pulse: [] for pulse in pulse_types}
+# infidelity_pink = {pulse: [] for pulse in pulse_types}
+# infidelity_pink_std = {pulse: [] for pulse in pulse_types}
+# # plot noise effect considering also resolutions found before 4ps and 0.04mV to be safe
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     # White noise sweep
+#     for w_amp in tqdm(white_amps, desc=f"{pulse} - White noise", leave=False):
+#         fidelities = []
+#         for _ in range(iterations):
+#             fidelity = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV= 0.07e-3,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat= 2e-12,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 white_amp=w_amp,
+#                 pink_amp=0,
+#             )
+#             fidelities.append(fidelity)
+#         fidelities = np.array(fidelities)
+#         infidelity_white[pulse].append(1 - np.mean(fidelities))
+#         infidelity_white_std[pulse].append(np.std(1 - fidelities))
+    
+#     # Pink noise sweep
+#     for p_amp in tqdm(pink_amps, desc=f"{pulse} - Pink noise", leave=False):
+#         fidelities = []
+#         for _ in range(iterations):
+#             fidelity = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV=0.07e-3,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat=2e-12,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 white_amp=0,
+#                 pink_amp=p_amp,
+#             )
+#             fidelities.append(fidelity)
+#         fidelities = np.array(fidelities)
+#         infidelity_pink[pulse].append(1 - np.mean(fidelities))
+#         infidelity_pink_std[pulse].append(np.std(1 - fidelities))
+
+# #saving data
+# np.savez("infidelity_results_err.npz",
+#          infidelity_white = infidelity_white,
+#          infidelity_pink = infidelity_pink,
+#          infidelity_white_std = infidelity_white_std,
+#          infidelity_pink_std = infidelity_pink_std,
+#          white_amps=white_amps,
+#          pink_amps=pink_amps,
+#          pulse_types=pulse_types)
+
+# # #load data
+# # data = np.load("infidelity_results.npz", allow_pickle=True)
+
+# # infidelity_white = data["infidelity_white"].item()
+# # infidelity_white_std = data["infidelity_white_std"].item()
+# # infidelity_pink = data["infidelity_pink"].item()
+# # infidelity_pink_std = data["infidelity_pink_std"].item()
+# # white_amps = data["white_amps"]
+# # pink_amps = data["pink_amps"]
+# # pulse_types = data["pulse_types"]
+
+# # Plotting
+# plt.figure(figsize=(10,6))
+
+# colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# # White noise lines
+# for pulse in pulse_types:
+#     plt.plot(white_amps*1e3, infidelity_white[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
+#     plt.bar(
+#     white_amps*1e3,
+#     2 * np.array(infidelity_white_std[pulse]),                # full height = 2σ
+#     bottom=(np.array(infidelity_white[pulse]) - np.array(infidelity_white_std[pulse])) ,         # center bar on the mean
+#     width=0.2*(white_amps[1]-white_amps[0])*1e3,    # adjust width
+#     alpha=0.3,
+#     color='grey',
+# )
+# # Pink noise lines
+# for pulse in pulse_types:
+#     plt.plot(pink_amps*1e3, infidelity_pink[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
+#     plt.bar(
+#     pink_amps*1e3,
+#     2 * np.array(infidelity_pink_std[pulse]),                # full height = 2σ
+#     bottom=(np.array(infidelity_pink[pulse]) - np.array(infidelity_pink_std[pulse])) ,         # center bar on the mean
+#     width=0.1*(pink_amps[1]-pink_amps[0])*1e3,    # adjust width
+#     alpha=0.3,
+#     color='orange',
+# )
+
+# # Threshold line
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("Noise Amplitude [mV]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')  # log scale is useful for small infidelities
+# plt.title("Infidelity vs Noise Amplitude for Different Pulses")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# plt.show()
 
 # # 3D plot with heatmap
-# white_amps = np.linspace(0, 1.5e-3, 20)
-# pink_amps = np.linspace(0, 0.5e-3, 20)
-# iterations = 10  # reduced for speed, increase if needed
+# white_amps = np.linspace(0, 1.5e-3, 10)
+# pink_amps = np.linspace(0, 0.5e-3, 10)
+# iterations = 40  # reduced for speed, increase if needed
 
 # # Storage: 3D array [pulse, white_amp, pink_amp]
 # infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
@@ -599,6 +722,72 @@ plt.show()
 #     plt.grid(False)
 #     plt.show()
 
+# # errors delta t and delta V
+# white_amps = np.linspace(0, 1.5e-3, 10)
+# pink_amps = np.linspace(0, 0.5e-3, 10)
+# iterations = 40  # reduced for speed, increase if needed
+
+# # Storage: 3D array [pulse, white_amp, pink_amp]
+# infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     for i, w_amp in enumerate(tqdm(white_amps, desc=f"{pulse} - White sweep", leave=False)):
+#         for j, p_amp in enumerate(tqdm(pink_amps, desc="Pink sweep", leave=False)):
+#             fidelities = []
+#             for _ in range(iterations):
+#                 fidelity = run_exchange_qubit_simulation(
+#                     J_offset=10e3,
+#                     V1=184e-3,
+#                     V2=184e-3,
+#                     alpha=50,
+#                     deltaV=0.06e-3,
+#                     pulse_type=pulse,
+#                     t_rise=1e-9,
+#                     t_fall=1e-9,
+#                     deltat=2e-12,
+#                     tau=0.1e-9,
+#                     plot_bloch=False,
+#                     plot_pulse=False,
+#                     plot_noise=False,
+#                     white_amp=w_amp,
+#                     pink_amp=p_amp,
+#                 )
+#                 fidelities.append(fidelity)
+#             fidelities = np.array(fidelities)
+#             infidelities[pulse][i, j] = 1 - np.mean(fidelities)  # store mean infidelity
+
+# #saving data
+# np.savez("infidelity_results_heatmap_err.npz",
+#          infidelities = infidelities,
+#          white_amps=white_amps,
+#          pink_amps=pink_amps,
+#          pulse_types=pulse_types)
+
+
+# # Plot heatmaps
+# for pulse in pulse_types:
+#     plt.figure(figsize=(8,6))
+#     plt.title(f"Infidelity Heatmap - {pulse} pulse")
+#     # Use log scale for better visibility
+#     im = plt.imshow(infidelities[pulse].T, origin='lower',
+#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+#                     norm=LogNorm(vmin=1e-6, vmax=np.max(infidelities[pulse])),
+#                     aspect='auto', cmap='viridis')
+    
+#     # Add colorbar
+#     cbar = plt.colorbar(im)
+#     cbar.set_label('Infidelity (1 - Fidelity)')
+    
+#     # Overlay contour line where infidelity = 1e-4
+#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+#     cs = plt.contour(W, P, infidelities[pulse], levels=[1e-4], colors='red', linewidths=2)
+#     plt.clabel(cs, fmt='1e-4', colors='red')
+    
+#     plt.xlabel("White Noise Amplitude [mV]")
+#     plt.ylabel("Pink Noise Amplitude [mV]")
+#     plt.grid(False)
+#     plt.show()
 
 # for pulse_type in pulse_types:
 #     fidelities = []
