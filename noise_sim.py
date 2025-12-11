@@ -121,7 +121,7 @@ def plot_delta_theta(amp_min, amp_max, white=False, flicker=False,
                      color='orange', alpha=0.3, label="±1 std")
     # Add horizontal line at y = 4.08e-3
     plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
-    plt.xlabel("Noise amplitude $\\bar mV_n$ $[\\frac{mV}{Hz}]$")
+    plt.xlabel("Noise amplitude $\\bar mV_n$ $[\\frac{mV}{\\sqrt{Hz}}]$")
     plt.ylabel("Δθ ")
     plt.title(f"Δθ vs Noise Amplitude ({iterations} realizations) {white}")
     plt.legend()
@@ -141,16 +141,11 @@ t_max = theta/J0
 
 fs = int(1000/ t_max)
 
-print(fs)
-
-print(t_max)
-
 x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
 x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
 
 plot_noise(0.018*x_white, 0.018*x_pink, 0.018**2*S_white,0.018**2* S_pink, fs=fs)
-
-plot_delta_theta(0, 0.1, white = False, flicker = True, N=200)
-plot_delta_theta(0, 0.1, white = True, flicker = False, N=200)
+plot_delta_theta(0, 0.001, white = False, flicker = True, N=200)
+plot_delta_theta(0, 0.002, white = True, flicker = False, N=200)
 
 plt.show()
