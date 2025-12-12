@@ -39,7 +39,7 @@ for pulse in pulse_types:
     plt.fill_between(
         white_amps*1e3,
         np.array(infidelity_white[pulse]),  # lower bound
-        np.array(infidelity_white[pulse]) + delta,  # upper bound
+        np.array(infidelity_white[pulse]) + 3* delta,  # upper bound
         color='orange',
         alpha=0.1
     )
@@ -60,7 +60,7 @@ for pulse in pulse_types:
     plt.fill_between(
         pink_amps*1e3,
         np.array(infidelity_pink[pulse]),  # lower bound
-        np.array(infidelity_pink[pulse]) + delta,  # upper bound
+        np.array(infidelity_pink[pulse]) + 3*delta,  # upper bound
         color='orange',
         alpha=0.1
     )
@@ -108,7 +108,7 @@ for pulse in pulse_types:
     plt.fill_between(
         white_amps*1e3,
         np.array(infidelity_white[pulse]),  # lower bound
-        np.array(infidelity_white[pulse]) + delta,  # upper bound
+        np.array(infidelity_white[pulse]) + 3*delta,  # upper bound
         color='orange',
         alpha=0.1
     )
@@ -129,7 +129,7 @@ for pulse in pulse_types:
     plt.fill_between(
         pink_amps*1e3,
         np.array(infidelity_pink[pulse]),  # lower bound
-        np.array(infidelity_pink[pulse]) + delta,  # upper bound
+        np.array(infidelity_pink[pulse]) + 3*delta,  # upper bound
         color='orange',
         alpha=0.1
     )
@@ -149,6 +149,7 @@ plt.show()
 data = np.load("infidelity_results_heatmap.npz", allow_pickle=True)
 
 infidelities = data["infidelities"].item()
+infidelities_std = data["infidelities_std"].item()
 white_amps = data["white_amps"]
 pink_amps = data["pink_amps"]
 pulse_types = data["pulse_types"]
@@ -158,7 +159,7 @@ for pulse in pulse_types:
     plt.figure(figsize=(8,6))
     plt.title(f"Infidelity Heatmap - {pulse} pulse")
     # Use log scale for better visibility
-    im = plt.imshow(infidelities[pulse].T, origin='lower',
+    im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
                     norm=LogNorm(vmin=1e-6, vmax=np.max(infidelities[pulse])),
                     aspect='auto', cmap='viridis')
@@ -169,19 +170,21 @@ for pulse in pulse_types:
     
     # Overlay contour line where infidelity = 1e-4
     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-    cs = plt.contour(W, P, infidelities[pulse], levels=[1e-4], colors='red', linewidths=2)
+    cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
     plt.clabel(cs, fmt='1e-4', colors='red')
     
     plt.xlabel("White Noise Amplitude")
     plt.ylabel("Pink Noise Amplitude")
     plt.grid(False)
-    plt.show()
+   
+plt.show()
 
 #heatmaps errors
 
 data = np.load("infidelity_results_heatmap_err.npz", allow_pickle=True)
 
 infidelities = data["infidelities"].item()
+infidelities_std = data["infidelities_std"].item()
 white_amps = data["white_amps"]
 pink_amps = data["pink_amps"]
 pulse_types = data["pulse_types"]
@@ -191,7 +194,7 @@ for pulse in pulse_types:
     plt.figure(figsize=(8,6))
     plt.title(f"Infidelity Heatmap - {pulse} pulse")
     # Use log scale for better visibility
-    im = plt.imshow(infidelities[pulse].T, origin='lower',
+    im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
                     norm=LogNorm(vmin=1e-6, vmax=np.max(infidelities[pulse])),
                     aspect='auto', cmap='viridis')
@@ -202,10 +205,11 @@ for pulse in pulse_types:
     
     # Overlay contour line where infidelity = 1e-4
     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-    cs = plt.contour(W, P, infidelities[pulse], levels=[1e-4], colors='red', linewidths=2)
+    cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
     plt.clabel(cs, fmt='1e-4', colors='red')
     
     plt.xlabel("White Noise Amplitude")
     plt.ylabel("Pink Noise Amplitude")
     plt.grid(False)
-    plt.show()
+   
+plt.show()

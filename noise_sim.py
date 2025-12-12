@@ -5,6 +5,7 @@ from functools import partial
 from qutip import basis, sesolve, sigmax, sigmay, sigmaz
 import matplotlib.pyplot as plt
 from scipy.signal import welch
+from tqdm import tqdm
 
 # Noise generator with arbitrary PSD
 def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
@@ -63,14 +64,13 @@ def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     plt.grid(True)
     plt.show()
 
-def plot_delta_theta(amp_min, amp_max, white=False, flicker=False, 
-                        N=200, t_min=0, iterations=100):
+def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_min=0, iterations=100):
     """
     Plots mean and std deviation of Δθ as a function of noise amplitude σ.
     Monte Carlo over `iterations` noise realizations.
     """
+    
     amp_vals = np.linspace(amp_min, amp_max, N)
-   
     alpha = 50
     Joffset = 10e3
     V0 = 187e-3
@@ -78,15 +78,16 @@ def plot_delta_theta(amp_min, amp_max, white=False, flicker=False,
     delta_std  = []
     J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
     theta = np.arctan(np.sqrt(8))
-    t_max = theta/J0
+    t_max = theta/J0 
 
     fs = int(1000/ t_max)
     N = int(t_max*fs) -1
     t = np.linspace(t_min, t_max, N)   # physical time axis
-
-    for amp in amp_vals:
+    
+    for amp in tqdm(amp_vals):
         delta_samples = []
-        for _ in range(iterations):
+        delta_theta = np.zeros(iterations)
+        for i in range(iterations):
             # generate noise
             noise_white = np.zeros(N)
             noise_pink = np.zeros(N)
@@ -103,12 +104,10 @@ def plot_delta_theta(amp_min, amp_max, white=False, flicker=False,
             # integrate e^{alpha n(t)}
             g = np.exp(alpha * noise)
             integral = np.trapezoid(g, t)
-            delta_theta = integral * 2 * np.pi * Joffset
-
-            delta_samples.append(np.abs(delta_theta-theta))
+            delta_theta[i] = integral * 2 * np.pi * Joffset
 
         # Compute statistics
-        delta_samples = np.array(delta_samples)
+        delta_samples = np.array(np.abs(delta_theta-theta))
         delta_mean.append(np.mean(delta_samples))
         delta_std.append(np.std(delta_samples))
 
@@ -119,8 +118,8 @@ def plot_delta_theta(amp_min, amp_max, white=False, flicker=False,
     # Plot mean with shaded std
     plt.figure(figsize=(6,4))
     plt.plot(amp_vals*1e3, delta_mean, label="Mean Δθ")
-    plt.fill_between(amp_vals *1e3, (delta_mean - delta_std), (delta_mean + delta_std),
-                     color='orange', alpha=0.3, label="±1 std")
+    plt.fill_between(amp_vals *1e3, (delta_mean - 3*delta_std), (delta_mean + 3*delta_std),
+                     color='orange', alpha=0.3, label="±3 std")
     # Add horizontal line at y = 4.08e-3
     plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
     plt.xlabel("Noise amplitude[mV]")
@@ -151,7 +150,7 @@ A_white= 0
 A_pink = 0.0018
 x = A_white * x_white + A_pink * A_pink
 
-plot_delta_theta(0, 0.001, white = False, flicker = True, N=200)
-plot_delta_theta(0, 0.002, white = True, flicker = False, N=200)
+plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 1000)
+plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 1000)
 
 plt.show()
