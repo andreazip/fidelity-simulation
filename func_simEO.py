@@ -3,49 +3,48 @@ import qutip as qt
 import matplotlib.pyplot as plt
 from functools import partial
 from qutip import basis, sesolve, sigmax, sigmay, sigmaz
+from scipy.integrate import quad
+from scipy.optimize import brentq
 from tqdm import tqdm
 from matplotlib.colors import LogNorm  
 
 # ------------------------------
-#   Pulse shapes
+#   Pulse shapes for voltage
 # ------------------------------
 
-def square_pulse(t, t_start, t_end, amp, alpha = 50, J_offset =10e3, white_func= None, pink_func= None):
+def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None):
     # --- Compute exchange values ---
     noise = 0
+
     if white_func is not None:
         noise += white_func(t)
     if pink_func is not None:
         noise += pink_func(t)
-
-    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
-    ## J_noise is extremely small, should we plot J_amp - J_noise?
     amp = amp + noise
-    J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
     
-    return J_amp if (t_start <= t <= t_end) else J_noise
+    return amp if (t_start <= t <= t_end) else noise
 
-def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, alpha = 50, J_offset =10e3, white_func= None, pink_func= None):
+def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0,white_func= None, pink_func= None):
     noise = 0
+
     if white_func is not None:
         noise += white_func(t)
     if pink_func is not None:
         noise += pink_func(t)
 
-    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
     amp = amp + noise
-    J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
-    if t < t_start:
-        return J_noise
-    if t_start <= t < t_start + rise:
-        return J_amp * (t - t_start)/rise if rise>0 else amp
-    if t_start + rise <= t <= t_end - fall:
-        return J_amp
-    if t_end - fall < t <= t_end:
-        return J_amp * (1 - (t - (t_end - fall))/fall) if fall>0 else amp
-    return J_noise
 
-def rc_pulse(t, t_start, t_end, amp, tau, alpha = 50, J_offset =10e3, white_func= None, pink_func= None):
+    if t < t_start:
+        return noise
+    if t_start <= t < t_start + rise:
+        return amp * (t - t_start)/rise if rise>0 else amp
+    if t_start + rise <= t <= t_end - fall:
+        return amp
+    if t_end - fall < t <= t_end:
+        return amp * (1 - (t - (t_end - fall))/fall) if fall>0 else amp
+    return noise
+
+def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None):
     """
     RC-like pulse with flat top:
     - Exponential rise: t_start → t_start + 5*tau
@@ -58,11 +57,10 @@ def rc_pulse(t, t_start, t_end, amp, tau, alpha = 50, J_offset =10e3, white_func
     if pink_func is not None:
         noise += pink_func(t)
 
-    J_noise = np.exp(alpha*(noise)) * J_offset * 2*np.pi
     amp = amp + noise
-    J_amp = np.exp(alpha*(amp)) * J_offset * 2*np.pi
+
     if t < t_start or t > t_end:
-        return J_noise
+        return noise
 
     t_rise_end = t_start + 7*tau
     t_fall_start = t_end - 7*tau
@@ -70,28 +68,64 @@ def rc_pulse(t, t_start, t_end, amp, tau, alpha = 50, J_offset =10e3, white_func
     if t < t_rise_end:
         # Rising edge
         dt = t - t_start
-        return J_amp * (1 - np.exp(-dt / tau))
+        return amp * (1 - np.exp(-dt / tau))
     elif t <= t_fall_start:
         # Flat top
-        return J_amp
+        return amp * (1 - np.exp(-(t_rise_end-t_start) / tau))
     else:
         # Falling edge
         dt = t - t_fall_start
-        return J_amp * np.exp(-dt / tau)
+        return amp * np.exp(-dt / tau)
+    
+def J (alpha, J0, V):
+    #return the value in rad/s
+    return np.exp(alpha*V)*J0*2*np.pi 
 
 # Pulse factory
-def make_pulse_function(pulse_type, pulse_params):
+def make_pulse_function(alpha, J_offset, pulse_type, pulse_params):
     if pulse_type == "square":
-        return lambda t: sum(square_pulse(t, *params) for params in pulse_params)
+        return lambda t: J(alpha, J_offset, sum(square_pulse(t, *params) for params in pulse_params))
 
-    elif pulse_type == "linear":
-        return lambda t: sum(linear_pulse(t, *params) for params in pulse_params)
+    if pulse_type == "linear":
+        return lambda t: J(alpha, J_offset, sum(linear_pulse(t, *params) for params in pulse_params))
 
-    elif pulse_type == "RC":
-        return lambda t: sum(rc_pulse(t, *params) for params in pulse_params)
-
+    if pulse_type == "RC":
+        return lambda t: J(alpha, J_offset, sum(rc_pulse(t, *params) for params in pulse_params))
     else:
         raise ValueError("Unknown pulse type.")
+
+# Pulse factory
+def make_voltage_function(pulse_type, pulse_params):
+    if pulse_type == "square":
+        return lambda t:  sum(square_pulse(t, *params) for params in pulse_params)
+
+    if pulse_type == "linear":
+        return lambda t: sum(linear_pulse(t, *params) for params in pulse_params)
+
+    if pulse_type == "RC":
+        return lambda t:  sum(rc_pulse(t, *params) for params in pulse_params)
+    else:
+        raise ValueError("Unknown pulse type.")
+
+def calculate_fidelity(U, U_ideal):
+    """
+    Calculate the process fidelity between the operation and the ideal transformation.
+    """
+    dim = U.shape[0]*U.shape[1]
+    return np.abs(np.trace((U.dag() * U_ideal).full()))**2/(dim)
+
+#function to compute the integral
+def I_total(t_end, V0, trise, tfall, Joff, alpha, tau, pulse_type = None):
+    if pulse_type == "linear":
+        return quad(
+            lambda t: J(alpha, Joff, linear_pulse(t, 0, t_end, V0, trise, tfall)),
+            0, t_end
+            )[0]
+    if pulse_type == "RC":
+        return quad(
+            lambda t: J(alpha, Joff, rc_pulse(t, 0, t_end, V0, tau)),
+            0, t_end
+            )[0]
 
 
 # ------------------------------
@@ -115,37 +149,77 @@ def run_exchange_qubit_simulation(
 ):
 
     sx, sy, sz = sigmax(), sigmay(), sigmaz()
+
+    #define states for state fidelity
     psi0 = basis(2,1)
     psi_target = basis(2,0)
 
-    J12_amp_id = np.exp(alpha*(V1)) * J_offset * 2*np.pi
-    J23_amp_id = np.exp(alpha*(V2)) * J_offset * 2*np.pi
-    
-    V1 = V1 + deltaV
-    V2 = V2 - deltaV
+    #define operator for operator fidelity: they should match in this case!
+    target_operator = qt.sigmax()
 
+    #compute ideal amplitude for the rotation to be applied
+    J12_amp_id = np.exp(alpha*(V1)) * J_offset * 2*np.pi #[rad/s]
+    J23_amp_id = np.exp(alpha*(V2)) * J_offset * 2*np.pi #[rad/s]
+    
+    #define the two rotations angle from paper to compute the X gate
     theta1 = np.pi - np.arctan(np.sqrt(8))
     theta2 = np.arctan(np.sqrt(8))
     
-
     if pulse_type == "square":
         t1 = theta1/J12_amp_id
         t2 = theta2/J23_amp_id 
         t_total = t1 + t2 + t1
+
     elif pulse_type == "linear":
-        t1 = theta1/J12_amp_id + (t_rise + t_fall)/2
-        t2 = theta2/J23_amp_id + (t_rise + t_fall)/2
-        t_total = t1 + t2 + t1 
+        # t1 = theta1/J12_amp_id + (t_rise + t_fall)/2
+        # t2 = theta2/J23_amp_id + (t_rise + t_fall)/2
+        # t_total = t1 + t2 + t1 
+        def objective1(tconst):
+            t_end = t_rise + tconst + t_fall #update integral time
+            return I_total(t_end, V1, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta1
+
+        t_const_1 = brentq(objective1, 0, 1)
+        print("Found tconst =", t_const_1)
+
+        def objective2(tconst):
+            t_end = t_rise + tconst + t_fall #update integral time
+            return I_total(t_end, V2, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta2
+
+        t_const_2 = brentq(objective2, 0, 1)
+        print("Found tconst =", t_const_2)
+
+        t1 = t_rise + t_fall + t_const_1
+        t2 = t_rise + t_fall + t_const_2
+        t_total = t2 + 2*t1
+
     elif pulse_type == "RC":
-        t1 = theta1/J12_amp_id + 7*tau -2*(np.exp(-5*((tau)**2))/tau -1/tau)
-        t2 = theta2/J23_amp_id + 7*tau -2*(np.exp(-5*((tau)**2))/tau -1/tau)
-        t_total = t1 + t2 + t1
+        def objective1(tconst):
+            t_end = tconst + 14*tau #update integral time
+            return I_total(t_end, V1, 0, 0, J_offset, alpha, tau, pulse_type) - theta1
+
+        t_const_1 = brentq(objective1, 0, 1)
+        print("Found tconst =", t_const_1)
+
+        def objective2(tconst):
+            t_end = tconst + 14*tau #update integral time
+            return I_total(t_end, V2, 0, 0, J_offset, alpha, tau, pulse_type) - theta2
+
+        t_const_2 = brentq(objective2, 0, 1)
+        print("Found tconst =", t_const_2)
+
+        t1 = 14*tau + t_const_1
+        t2 = 14*tau + t_const_2
+        t_total = t2 + 2*t1
 
     t_jitter = np.random.normal(0, sigma_jitter) #generate jitter on the period
     # Pulse timing
     t_start1, t_end1 = 0, t1 
     t_start2, t_end2 = t1, t1+t2 
     t_start3, t_end3 = t1+t2, 2*t1+t2 
+
+    
+    V1 = V1 + deltaV
+    V2 = V2 - deltaV
 
     tlist = np.linspace(-1e-9, t_total+1e-9, 400)
 
@@ -166,38 +240,38 @@ def run_exchange_qubit_simulation(
 
     # Parameter list passed into pulse generator
     if pulse_type == "square":
-        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, alpha , J_offset , white_func, pink_func)]
+        J12_params = [( t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, white_func, pink_func)]
         J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, alpha, J_offset ,  white_func, pink_func),
-        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, alpha, J_offset ,white_func, pink_func)
+        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, white_func, pink_func),
+        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2 ,white_func, pink_func)
         ]
     elif pulse_type == "linear":
-        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, t_rise, t_fall, alpha, J_offset , white_func, pink_func)]
+        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, t_rise, t_fall, white_func, pink_func)]
         J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, t_rise, t_fall, alpha, J_offset , white_func, pink_func),
-        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, t_rise, t_fall,alpha, J_offset , white_func, pink_func)
+        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, t_rise, t_fall , white_func, pink_func),
+        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, t_rise, t_fall, white_func, pink_func)
         ]
     elif pulse_type == "RC":
             # ----------- J12 pulse (middle pulse) -----------
         # J12 pulse (middle pulse)
         J12_params = [
             # RC rise
-            (t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, tau, alpha, J_offset ,white_func, pink_func),
+            (t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, tau ,white_func, pink_func),
         ]
 
         # J23 pulses (first and last pulse)
         J23_params = [
             # First pulse rise
-            (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, tau, alpha, J_offset , white_func, pink_func),
+            (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, tau , white_func, pink_func),
             # Second pulse rise
-            (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, tau, alpha, J_offset , white_func, pink_func),
+            (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, tau, white_func, pink_func),
         ]
 
 
     # Prepare functions J12(t), J23(t)
-    J12_func = make_pulse_function(pulse_type, J12_params)
-    J23_func = make_pulse_function(pulse_type, J23_params)
-
+    J12_func = make_pulse_function(alpha, J_offset, pulse_type, J12_params)
+    J23_func = make_pulse_function(alpha, J_offset, pulse_type, J23_params)
+    
     # Hamiltonian
     def H(t, args=None):
         return -0.5 * (J12_func(t) * sz - 0.5 * J23_func(t) * (sz + np.sqrt(3)*sx))
@@ -205,6 +279,13 @@ def run_exchange_qubit_simulation(
     # Time evolution
     tlist = np.linspace(-1e-9, t_total+1e-9, 400)
     result = sesolve(H, psi0, tlist)
+
+    # Calculate the operator with and w/o rotating frame approx.
+    # qt.propagator returns list of U for each time step
+    U = qt.propagator(H,tlist)
+
+    # Fidelity can be calculated with
+    f_pulse = calculate_fidelity( U[-1], target_operator )
 
     # Fidelity
     f = abs(psi_target.overlap(result.states[-1]))**2
@@ -228,11 +309,24 @@ def run_exchange_qubit_simulation(
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [MHz]")
         plt.title("Pulse Sequence")
+
+        V12_func = make_voltage_function(pulse_type, J12_params)
+        V23_func = make_voltage_function(pulse_type, J23_params)
+        V12_vals = [V12_func(t)*1e3 for t in tlist]
+        V23_vals = [V23_func(t)*1e3 for t in tlist]
+        plt.figure()
+        plt.plot(tlist*1e9,V12_vals, label="V12(t) [mV]")
+        plt.plot(tlist*1e9, V23_vals, label="V23(t) [mV]")
+        plt.legend()
+        plt.xlabel("Time [ns]")
+        plt.ylabel("Amplitude [mV]")
+        plt.title("Pulse Sequence")
         plt.show()
+
 
     if plot_noise:
         plot_noise_func(x_white, x_pink, S_white*white_amp**2, S_pink*pink_amp**2, fs=fs, labels=('White noise', 'Flicker Noise'))
-    return f
+    return f, f_pulse
 
 def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         N = int(T * fs)
@@ -293,22 +387,22 @@ def plot_noise_func(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Nois
 
 pulse_types = ["square", "linear", "RC"]
 
-#calibration step
-# for pulse_type in pulse_types:
-#     fidelity = run_exchange_qubit_simulation(
-#         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#         deltaV=0.0,
-#         pulse_type=pulse_type,
-#         t_rise = 1e-9,
-#         t_fall = 1e-9,
-#         deltat=0.0,
-#         tau = 0.1e-9, 
-#         plot_bloch=False,
-#         plot_pulse=True,
-#         white_amp = 0,
-#         pink_amp = 0,
-#     )
-#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+# calibration step
+for pulse_type in pulse_types:
+    fidelity, fidelity_pulse = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV=0.085e-3,
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat=0.0,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse=True,
+        white_amp = 0,
+        pink_amp = 0,
+    )
+    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} , pulse: {fidelity*100:.5f} %")
 
 # #check deltat
 # for pulse_type in pulse_types:
@@ -689,75 +783,75 @@ pulse_types = ["square", "linear", "RC"]
 # plt.grid(True, which="both", ls="--")
 # plt.show()
 
-# 3D plot with heatmap
-white_amps = np.linspace(0, 1e-3, 5)
-pink_amps = np.linspace(0, 0.2e-3, 5)
-iterations = 5  # reduced for speed, increase if needed
+# # 3D plot with heatmap
+# white_amps = np.linspace(0, 1e-3, 5)
+# pink_amps = np.linspace(0, 0.2e-3, 5)
+# iterations = 5  # reduced for speed, increase if needed
 
-# Storage: 3D array [pulse, white_amp, pink_amp]
-infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_std = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# # Storage: 3D array [pulse, white_amp, pink_amp]
+# infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_std = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
 
-# Simulation loop
-for pulse in tqdm(pulse_types, desc="Pulse types"):
-    for i, w_amp in enumerate(tqdm(white_amps, desc=f"{pulse} - White sweep", leave=False)):
-        for j, p_amp in enumerate(tqdm(pink_amps, desc="Pink sweep", leave=False)):
-            fidelities = []
-            for _ in range(iterations):
-                fidelity = run_exchange_qubit_simulation(
-                    J_offset=10e3,
-                    V1=184e-3,
-                    V2=184e-3,
-                    alpha=50,
-                    deltaV=0,
-                    pulse_type=pulse,
-                    t_rise=1e-9,
-                    t_fall=1e-9,
-                    deltat=0,
-                    tau=0.1e-9,
-                    plot_bloch=False,
-                    plot_pulse=False,
-                    plot_noise=False,
-                    white_amp=w_amp,
-                    pink_amp=p_amp,
-                )
-                fidelities.append(fidelity)
-            fidelities = np.array(fidelities)
-            infidelities[pulse][i, j] = 1 - np.mean(fidelities)  # store mean infidelity
-            infidelities_std[pulse][i,j] = np.std(fidelities)  # store std infidelity
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     for i, w_amp in enumerate(tqdm(white_amps, desc=f"{pulse} - White sweep", leave=False)):
+#         for j, p_amp in enumerate(tqdm(pink_amps, desc="Pink sweep", leave=False)):
+#             fidelities = []
+#             for _ in range(iterations):
+#                 fidelity = run_exchange_qubit_simulation(
+#                     J_offset=10e3,
+#                     V1=184e-3,
+#                     V2=184e-3,
+#                     alpha=50,
+#                     deltaV=0,
+#                     pulse_type=pulse,
+#                     t_rise=1e-9,
+#                     t_fall=1e-9,
+#                     deltat=0,
+#                     tau=0.1e-9,
+#                     plot_bloch=False,
+#                     plot_pulse=False,
+#                     plot_noise=False,
+#                     white_amp=w_amp,
+#                     pink_amp=p_amp,
+#                 )
+#                 fidelities.append(fidelity)
+#             fidelities = np.array(fidelities)
+#             infidelities[pulse][i, j] = 1 - np.mean(fidelities)  # store mean infidelity
+#             infidelities_std[pulse][i,j] = np.std(fidelities)  # store std infidelity
 
-#saving data
-np.savez("infidelity_results_heatmap.npz",
-         infidelities = infidelities,
-         infidelities_std = infidelities_std,
-         white_amps=white_amps,
-         pink_amps=pink_amps,
-         pulse_types=pulse_types)
+# #saving data
+# np.savez("infidelity_results_heatmap.npz",
+#          infidelities = infidelities,
+#          infidelities_std = infidelities_std,
+#          white_amps=white_amps,
+#          pink_amps=pink_amps,
+#          pulse_types=pulse_types)
 
 
-# Plot heatmaps
-for pulse in pulse_types:
-    plt.figure(figsize=(8,6))
-    plt.title(f"Infidelity Heatmap - {pulse} pulse")
-    # Use log scale for better visibility
-    im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
-                    extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-                    norm=LogNorm(vmin=1e-6, vmax=np.max(infidelities[pulse])),
-                    aspect='auto', cmap='viridis')
+# # Plot heatmaps
+# for pulse in pulse_types:
+#     plt.figure(figsize=(8,6))
+#     plt.title(f"Infidelity Heatmap - {pulse} pulse")
+#     # Use log scale for better visibility
+#     im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
+#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+#                     norm=LogNorm(vmin=1e-6, vmax=np.max(infidelities[pulse])),
+#                     aspect='auto', cmap='viridis')
     
-    # Add colorbar
-    cbar = plt.colorbar(im)
-    cbar.set_label('Infidelity (1 - Fidelity)')
+#     # Add colorbar
+#     cbar = plt.colorbar(im)
+#     cbar.set_label('Infidelity (1 - Fidelity)')
     
-    # Overlay contour line where infidelity = 1e-4
-    W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-    cs = plt.contour(W, P, infidelities[pulse], levels=[1e-4], colors='red', linewidths=2)
-    plt.clabel(cs, fmt='1e-4', colors='red')
+#     # Overlay contour line where infidelity = 1e-4
+#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+#     cs = plt.contour(W, P, infidelities[pulse], levels=[1e-4], colors='red', linewidths=2)
+#     plt.clabel(cs, fmt='1e-4', colors='red')
     
-    plt.xlabel("White Noise Amplitude [mV]")
-    plt.ylabel("Pink Noise Amplitude [mV]")
-    plt.grid(False)
-    plt.show()
+#     plt.xlabel("White Noise Amplitude [mV]")
+#     plt.ylabel("Pink Noise Amplitude [mV]")
+#     plt.grid(False)
+#     plt.show()
 
 # # errors delta t and delta V
 # white_amps = np.linspace(0, 1e-3, 10)
