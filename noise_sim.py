@@ -16,14 +16,16 @@ def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         X_white = np.fft.rfft(np.random.randn(N));
 
         S = psd_func(freqs)
-        # Normalize S
-        S =  S / np.sqrt(np.mean(S**2))
-        
-
         X_shaped = X_white * S
 
         N = N - 1
-        x = np.fft.irfft(X_shaped)[0:N]
+        # Back to time domain
+        x = np.fft.irfft(X_shaped, n=N)
+
+        # Normalize to unit RMS ---
+        x_rms = np.sqrt(np.mean(x**2))
+        if x_rms > 0:
+            x /= x_rms  
 
         return x, S
 
@@ -122,7 +124,7 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
                      color='orange', alpha=0.3, label="±3 std")
     # Add horizontal line at y = 4.08e-3
     plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
-    plt.xlabel("Noise amplitude[mV]")
+    plt.xlabel("Noise amplitude[$mV_{RMS}$]")
     plt.ylabel("Δθ ")
     plt.title(f"Δθ vs Noise Amplitude ({iterations} realizations)")
     plt.legend()
@@ -138,19 +140,24 @@ Joffset = 10e3
 V0 = 187e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
-t_max = theta/J0
+t_max = 10e-9
 
-fs = int(1000/ t_max)
+fs = int(100000/ t_max)
 
 x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
 x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
 
-plot_noise(0.018*x_white, 0.018*x_pink, 0.018**2*S_white,0.018**2* S_pink, fs=fs)
-A_white= 0
-A_pink = 0.0018
-x = A_white * x_white + A_pink * A_pink
+plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
+           
+rms_pink = np.sqrt(np.mean(x_pink**2))
+rms_white = np.sqrt(np.mean(x_white**2))
 
-plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 1000)
-plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 1000)
+# the signals are rms normalized
+
+print(f"{rms_pink}, {rms_white}")
+
+plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 300)
+plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 300)
+
 
 plt.show()

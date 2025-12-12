@@ -111,7 +111,7 @@ def calculate_fidelity(U, U_ideal):
     """
     Calculate the process fidelity between the operation and the ideal transformation.
     """
-    dim = U.shape[0]*U.shape[1]
+    dim = U.shape[0]*U_ideal.shape[1]
     return np.abs(np.trace((U.dag() * U_ideal).full()))**2/(dim)
 
 #function to compute the integral
@@ -171,22 +171,18 @@ def run_exchange_qubit_simulation(
         t_total = t1 + t2 + t1
 
     elif pulse_type == "linear":
-        # t1 = theta1/J12_amp_id + (t_rise + t_fall)/2
-        # t2 = theta2/J23_amp_id + (t_rise + t_fall)/2
-        # t_total = t1 + t2 + t1 
+        #compute objective function that we want to reduce to 0 in order to set the time for the integral
         def objective1(tconst):
             t_end = t_rise + tconst + t_fall #update integral time
             return I_total(t_end, V1, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta1
 
         t_const_1 = brentq(objective1, 0, 1)
-        print("Found tconst =", t_const_1)
 
         def objective2(tconst):
             t_end = t_rise + tconst + t_fall #update integral time
             return I_total(t_end, V2, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta2
 
         t_const_2 = brentq(objective2, 0, 1)
-        print("Found tconst =", t_const_2)
 
         t1 = t_rise + t_fall + t_const_1
         t2 = t_rise + t_fall + t_const_2
@@ -198,14 +194,13 @@ def run_exchange_qubit_simulation(
             return I_total(t_end, V1, 0, 0, J_offset, alpha, tau, pulse_type) - theta1
 
         t_const_1 = brentq(objective1, 0, 1)
-        print("Found tconst =", t_const_1)
+
 
         def objective2(tconst):
             t_end = tconst + 14*tau #update integral time
             return I_total(t_end, V2, 0, 0, J_offset, alpha, tau, pulse_type) - theta2
 
         t_const_2 = brentq(objective2, 0, 1)
-        print("Found tconst =", t_const_2)
 
         t1 = 14*tau + t_const_1
         t2 = 14*tau + t_const_2
@@ -217,9 +212,9 @@ def run_exchange_qubit_simulation(
     t_start2, t_end2 = t1, t1+t2 
     t_start3, t_end3 = t1+t2, 2*t1+t2 
 
-    
-    V1 = V1 + deltaV
-    V2 = V2 - deltaV
+    # considering worst case so opposite time, first will be also shorter
+    V1 = V1 - deltaV
+    V2 = V2 + deltaV
 
     tlist = np.linspace(-1e-9, t_total+1e-9, 400)
 
@@ -387,26 +382,26 @@ def plot_noise_func(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Nois
 
 pulse_types = ["square", "linear", "RC"]
 
-# calibration step
-for pulse_type in pulse_types:
-    fidelity, fidelity_pulse = run_exchange_qubit_simulation(
-        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-        deltaV=0.085e-3,
-        pulse_type=pulse_type,
-        t_rise = 1e-9,
-        t_fall = 1e-9,
-        deltat=0.0,
-        tau = 0.1e-9, 
-        plot_bloch=False,
-        plot_pulse=True,
-        white_amp = 0,
-        pink_amp = 0,
-    )
-    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} , pulse: {fidelity*100:.5f} %")
+# # calibration step
+# for pulse_type in pulse_types:
+#     fidelity, fidelity_pulse = run_exchange_qubit_simulation(
+#         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+#         deltaV=0,
+#         pulse_type=pulse_type,
+#         t_rise = 1e-9,
+#         t_fall = 1e-9,
+#         deltat=0.0,
+#         tau = 0.1e-9, 
+#         plot_bloch=False,
+#         plot_pulse=True,
+#         white_amp = 0,
+#         pink_amp = 0,
+#     )
+#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
 
 # #check deltat
 # for pulse_type in pulse_types:
-#     fidelity = run_exchange_qubit_simulation(
+#     fidelity_state, fidelity = run_exchange_qubit_simulation(
 #         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
 #         deltaV=0.0,
 #         pulse_type=pulse_type,
@@ -419,11 +414,11 @@ for pulse_type in pulse_types:
 #         white_amp = 0,
 #         pink_amp = 0,
 #     )
-#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+#     print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
 
-# #check deltaV
+# # check deltaV
 # for pulse_type in pulse_types:
-#     fidelity = run_exchange_qubit_simulation(
+#     fidelity_state, fidelity = run_exchange_qubit_simulation(
 #         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
 #         deltaV= 0.085e-3, 
 #         pulse_type=pulse_type,
@@ -436,11 +431,11 @@ for pulse_type in pulse_types:
 #         white_amp = 0,
 #         pink_amp = 0,
 #     )
-#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+#     print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
 
 # #check noise
 # for pulse_type in pulse_types:
-#      fidelity = run_exchange_qubit_simulation(
+#      fidelity_state, fidelity = run_exchange_qubit_simulation(
 #             J_offset = 10e3,
 #             V1 = 184e-3,
 #             V2 = 184e-3,
@@ -453,11 +448,11 @@ for pulse_type in pulse_types:
 #             tau = 0.1e-9,
 #             plot_bloch = False,
 #             plot_pulse = True,  
-#             plot_noise= True,
+#             plot_noise= False,
 #             white_amp = 0,
-#             pink_amp = 0.0018,
+#             pink_amp = 0.02e-3,
 #         )
-#      print(f"Final fidelity {pulse_type}: {fidelity*100:.5f}%")
+#      print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
 
 #check pink noise
 # iterations = 200
@@ -954,8 +949,8 @@ for pulse_type in pulse_types:
 #           f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
     
 # --- Sweep parameters ---
-#delta_t_list = np.linspace(-50e-12, 50e-12, 50)
-#delta_V_list = np.linspace(-0.1e-3, 0.1e-3, 50)
+delta_t_list = np.linspace(-50e-12, 50e-12, 50)
+delta_V_list = np.linspace(-0.2e-3, 0.2e-3, 50)
 
 # delta_t_list = np.linspace(-100e-12, 100e-12, 200)
 # delta_V_list = np.linspace(-0.2e-3, 0.2e-3, 200)
@@ -964,19 +959,20 @@ for pulse_type in pulse_types:
 # delta_V_list = np.linspace(0, 0.15e-3, 50)
 
 # pulse_types = ["square", "linear", "RC"]
-# #pulse_types = ["square"]
 # infidelity_maps = {}
+# state_infidelity_maps = {}
 
 # for pulse_type in pulse_types:
 #     inf_map = np.zeros((len(delta_t_list), len(delta_V_list)))
+#     state_inf_map = np.zeros((len(delta_t_list), len(delta_V_list)))
     
-#     for i, dt in enumerate(delta_t_list):
+#     for i, dt in tqdm(enumerate(delta_t_list)):
 #         for j, dV in enumerate(delta_V_list):
             
 #             # Call your parametrized function that:
 #             # - Takes pulse_type, dt, dV, etc.
 #             # - Returns final fidelity
-#             fidelity = run_exchange_qubit_simulation(
+#             state_fidelity, fidelity = run_exchange_qubit_simulation(
 #                 J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
 #                 deltaV= dV,
 #                 pulse_type= pulse_type,
@@ -990,8 +986,23 @@ for pulse_type in pulse_types:
 #             )
             
 #             inf_map[i,j] = 1 - fidelity
+#             state_inf_map[i,j] = 1 - state_fidelity
     
 #     infidelity_maps[pulse_type] = inf_map
+#     state_infidelity_maps[pulse_type] = state_inf_map
+
+# # Save only plot-related data
+# np.savez("infidelity_heatmaps.npz",
+#          infidelity_maps= infidelity_maps,
+#          state_infidelity_maps = state_infidelity_maps,
+#          delta_V_list=delta_V_list,
+#          delta_t_list=delta_t_list)
+
+# # --- Clip infidelity maps to avoid log10 issues ---
+# # Set a small floor value (e.g., 1e-12) to prevent log10(0)
+# floor_value = 1e-8
+# for pulse in pulse_types:
+#     infidelity_maps[pulse] = np.clip(infidelity_maps[pulse], floor_value, None)
 
 # # --- Plot heatmaps ---
 # fig, axes = plt.subplots(1, 3, figsize=(18,5))
@@ -1001,29 +1012,29 @@ for pulse_type in pulse_types:
 #                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
 #                    aspect='auto')
 #     ax.set_title(f"{pulse_type.capitalize()} pulse")
-#     ax.set_ylabel("Δt [ps]", labelpad=2)  
-#     ax.set_xlabel("ΔV [mV]", labelpad=2)
-#     fig.colorbar(im, ax=ax, label="Infidelity")
+#     ax.set_ylabel("Δt [ps]")  
+#     ax.set_xlabel("ΔV [mV]")
+#     fig.colorbar(im, ax=ax, label="log10(Infidelity)")
 
+# # --- Individual plots with contour ---
 # for pulse_type in pulse_types:
 #     plt.figure(figsize=(6,5))
 #     im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
 #                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
 #                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
 #                     aspect='auto')
-#      # --- Highlight log10(infidelity) = -4 with a red contour line ---
+#     # Highlight log10(infidelity) = -4 with a red contour
 #     plt.contour(np.log10(infidelity_maps[pulse_type]),
-#                 levels=[-4],                # level to highlight
+#                 levels=[-4],
 #                 colors='red',
 #                 linewidths=2,
 #                 origin='lower',
 #                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
 #                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
-#     # ----------------------------------------------------------------
 #     plt.title(f"{pulse_type.capitalize()} pulse")
-#     plt.xlabel("ΔV [mV]", labelpad=2)
-#     plt.ylabel("Δt [ps]", labelpad=2)
-#     plt.colorbar(im, label="Infidelity")
+#     plt.xlabel("ΔV [mV]")
+#     plt.ylabel("Δt [ps]")
+#     plt.colorbar(im, label="log10(Infidelity)")
 #     plt.grid(False)
 
 # plt.show()
