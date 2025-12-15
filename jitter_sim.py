@@ -2,6 +2,19 @@ import numpy as np
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 
+PPT_STYLE = {
+    "font.size": 20,
+    "axes.titlesize": 24,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 15,
+    "figure.figsize": (16, 9),  # 16:9 in inches
+    "lines.linewidth": 2.5
+}
+
+plt.rcParams.update(PPT_STYLE)
+
 def jitter_vs_delta_theta(alpha=50, Joffset=10e3, V0=187e-3, 
                           theta_ideal=np.arctan(np.sqrt(8)),
                           N=200, min_jitter=0, max_jitter=2.5e-12,
@@ -33,12 +46,12 @@ def jitter_vs_delta_theta(alpha=50, Joffset=10e3, V0=187e-3,
 list_jitter, delta_theta, delta_std = jitter_vs_delta_theta()
 
 # Plot
-plt.figure(figsize=(8,5))
+plt.figure(figsize=(16,9))
 plt.plot(list_jitter*1e12, delta_theta, label=r'$\Delta \theta$ vs jitter')
 plt.fill_between(list_jitter*1e12, (delta_theta - 3*delta_std), (delta_theta + 3*delta_std),
                      color='orange', alpha=0.3, label="±3 std")
 plt.axhline(4.08e-3, color='r', linestyle='--', label='Threshold 4.01e-3')
-plt.xlabel('Timing jitter (ps)')
+plt.xlabel('Timing $\sigma_{Jitter_{RMS}}$  (ps)')
 plt.ylabel(r'$\Delta \theta$')
 plt.title('Effect of timing jitter on theta')
 plt.grid(True)

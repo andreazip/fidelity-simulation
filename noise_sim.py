@@ -4,18 +4,21 @@ import matplotlib.pyplot as plt
 from functools import partial
 from qutip import basis, sesolve, sigmax, sigmay, sigmaz
 import matplotlib.pyplot as plt
-from scipy.signal import welch
+from scipy.signal import welch, get_window
 from tqdm import tqdm
 
 # Noise generator with arbitrary PSD
 def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         N = int(T * fs)
+        N = N + 1
         freqs = np.fft.rfftfreq(N,1/fs)
-        freqs[0] = freqs[1]
+        #should understand if needed
+        freqs =np.where(freqs==0, 1/T, freqs )
 
-        X_white = np.fft.rfft(np.random.randn(N));
+        X_white = np.fft.rfft(np.random.randn(N))
 
-        S = psd_func(freqs)
+        S = np.sqrt(psd_func(freqs))
+        S = S/np.sqrt(np.mean(S**2))
         X_shaped = X_white * S
 
         N = N - 1
@@ -23,19 +26,16 @@ def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         x = np.fft.irfft(X_shaped, n=N)
 
         # Normalize to unit RMS ---
-        x_rms = np.sqrt(np.mean(x**2))
-        if x_rms > 0:
-            x /= x_rms  
+        x_rms = x/np.sqrt(np.mean(x**2))
 
-        return x, S
+        return x_rms, S**2
 
 # PSD functions
 def white_psd(f):
     return np.ones_like(f)
 
 def pink_psd(f):
-    return 1/np.where(f == 0, float('inf'), f)
-
+   return 1/np.where(f == 0, float('inf'), f)
 
 def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     N = len(x1)
@@ -79,11 +79,11 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     delta_mean = []
     delta_std  = []
     J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
-    theta = np.arctan(np.sqrt(8))
+    theta = np.pi - np.arctan(np.sqrt(8))
     t_max = theta/J0 
 
     fs = int(1000/ t_max)
-    N = int(t_max*fs) -1
+    N = int(t_max*fs) 
     t = np.linspace(t_min, t_max, N)   # physical time axis
     
     for amp in tqdm(amp_vals):
@@ -123,10 +123,10 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     plt.fill_between(amp_vals *1e3, (delta_mean - 3*delta_std), (delta_mean + 3*delta_std),
                      color='orange', alpha=0.3, label="±3 std")
     # Add horizontal line at y = 4.08e-3
-    plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
+    plt.axhline(y=3.79e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
     plt.xlabel("Noise amplitude[$mV_{RMS}$]")
     plt.ylabel("Δθ ")
-    plt.title(f"Δθ vs Noise Amplitude ({iterations} realizations)")
+    plt.title(f"Δθ vs Noise Amplitude ({iterations} realizations), $\Delta V = 0.085 \, mV $")
     plt.legend()
     plt.grid(True)
     
@@ -142,13 +142,13 @@ J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
 t_max = 10e-9
 
-fs = int(100000/ t_max)
+fs = int(10000/ t_max)
 
 x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
 x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
 
 plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
-           
+
 rms_pink = np.sqrt(np.mean(x_pink**2))
 rms_white = np.sqrt(np.mean(x_white**2))
 
