@@ -1,6 +1,38 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
+import re
 
+def title_to_filename(title, ext="png"):
+    clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
+    return clean.lower().strip('_') + f".{ext}"
+
+def save_figure(title, folder="figures", ext="png"):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    plt.title(title)
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300, bbox_inches="tight")
+
+    plt.close()
+
+
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results"
+
+
+PPT_STYLE = {
+    "font.size": 20,
+    "axes.titlesize": 24,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 15,
+    "figure.figsize": (16, 9),  # 16:9 in inches
+    "lines.linewidth": 2.5
+}
+
+plt.rcParams.update(PPT_STYLE)
 # ----------------------------------------
 # Function to plot delta_t vs f_osc
 # ----------------------------------------
@@ -23,9 +55,9 @@ def plot_delta_t(f_osc=None, scale_factor=314, show_grid=True):
     delta_t = 1 / (f_osc * 1e6 * scale_factor)  # in seconds
 
     plt.figure(figsize=(6, 4))
-    plt.loglog(f_osc, delta_t * 1e9, linestyle='-')  # convert to ns
+    plt.loglog(f_osc, delta_t * 1e12, linestyle='-')  # convert to ns
     plt.xlabel(r'$f_{\mathrm{osc}}$ [MHz]')
-    plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ns]')
+    plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ps]')
     plt.title('Gate Time vs Oscillation Frequency')
     if show_grid:
         plt.grid(True, which="both", ls="--", lw=0.5)
@@ -82,16 +114,15 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     # ----------------------------------------
     # Δt_gate plot (left subplot)
     # ----------------------------------------
-    plt.figure(figsize=(12, 5))
 
     plt.subplot(1, 2, 1)
     time_resolution =[]
     for i in range(len(labels)):
         delta_t = 1 / (f_osc * 1e6 * scale_delta_t[i])  # seconds
         time_resolution.append(1 / (100* 1e6 * scale_delta_t[i])) # compute at 100 MHz
-        plt.loglog(f_osc, delta_t * 1e9, linestyle='-', label=labels[i])  # ns
-    plt.xlabel(r'$f_{\mathrm{osc}}$ [MHz]')
-    plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ns]')
+        plt.loglog(f_osc, delta_t * 1e12, linestyle='-', label=labels[i])  # ns
+    plt.xlabel('J [MHz]')
+    plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ps]')
     plt.title('Gate Time vs Oscillation Frequency')
     plt.grid(True, which="both", ls="--", lw=0.5)
     plt.legend()
@@ -112,7 +143,8 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     plt.grid(True, which="both", ls="--", lw=0.5)
     plt.legend()
 
-    plt.tight_layout()
+
+    save_figure(rf"$\Delta V$ vs $\theta$", SAVE_DIR)
    # plt.show()
     return time_resolution, voltage_resolution
 

@@ -44,130 +44,130 @@ PPT_STYLE = {
 
 plt.rcParams.update(PPT_STYLE)
 
-pulse_types = ["square", "linear", "RC"]
-#load data
-data = np.load("infidelity_heatmaps.npz", allow_pickle=True)
+# pulse_types = ["square", "linear", "RC"]
+# #load data
+# data = np.load("infidelity_heatmaps.npz", allow_pickle=True)
 
-infidelity_maps = data["infidelity_maps"].item()
-state_infidelity_maps = data["state_infidelity_maps"].item()
-delta_V_list = data["delta_V_list"]
-delta_t_list = data["delta_t_list"]
+# infidelity_maps = data["infidelity_maps"].item()
+# state_infidelity_maps = data["state_infidelity_maps"].item()
+# delta_V_list = data["delta_V_list"]
+# delta_t_list = data["delta_t_list"]
 
 
-# --- Clip infidelity maps to avoid log10 issues ---
-# Set a small floor value (e.g., 1e-12) to prevent log10(0)
-floor_value = 1e-6
-for pulse in pulse_types:
-    infidelity_maps[pulse] = np.clip(infidelity_maps[pulse], floor_value, None)
+# # --- Clip infidelity maps to avoid log10 issues ---
+# # Set a small floor value (e.g., 1e-12) to prevent log10(0)
+# floor_value = 1e-6
+# for pulse in pulse_types:
+#     infidelity_maps[pulse] = np.clip(infidelity_maps[pulse], floor_value, None)
 
-# --- Compute global min/max for color scaling ---
-vmin = np.log10(np.min([infidelity_maps[p] for p in pulse_types]))
-vmax = np.log10(np.max([infidelity_maps[p] for p in pulse_types]))
+# # --- Compute global min/max for color scaling ---
+# vmin = np.log10(np.min([infidelity_maps[p] for p in pulse_types]))
+# vmax = np.log10(np.max([infidelity_maps[p] for p in pulse_types]))
 
-# --- Create figure and axes with controlled width ---
-fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
+# # --- Create figure and axes with controlled width ---
+# fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
 
-for ax, pulse_type in zip(axes, pulse_types):
-    im = ax.imshow(np.log10(infidelity_maps[pulse_type]),
-                   origin='lower',
-                   extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                           delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-                   aspect='auto',
-                   vmin=vmin, vmax=vmax)  # same color scale
+# for ax, pulse_type in zip(axes, pulse_types):
+#     im = ax.imshow(np.log10(infidelity_maps[pulse_type]),
+#                    origin='lower',
+#                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+#                    aspect='auto',
+#                    vmin=vmin, vmax=vmax)  # same color scale
     
-    ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
-    ax.set_xlabel("ΔV [mV]", labelpad=5)
-    ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
+#     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+#     ax.set_xlabel("ΔV [mV]", labelpad=5)
+#     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
 
-# --- Add a single colorbar for all axes ---
-cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
-cbar.set_label("log10(Infidelity)")
+# # --- Add a single colorbar for all axes ---
+# cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
+# cbar.set_label("log10(Infidelity)")
 
-# --- Adjust layout to bring y-axis labels closer ---
-save_figure(r"Heatmap pulses", SAVE_DIR_1)
+# # --- Adjust layout to bring y-axis labels closer ---
+# save_figure(r"Heatmap pulses", SAVE_DIR_1)
 
-plt.show()
+# plt.show()
 
-# --- Individual plots with contour ---
-for pulse_type in pulse_types:
-    plt.figure(figsize=(16,9))
-    im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
-                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-                    aspect='auto')
-    # Highlight log10(infidelity) = -4 with a red contour
-    plt.contour(np.log10(infidelity_maps[pulse_type]),
-                levels=[-4],
-                colors='red',
-                linewidths=2,
-                origin='lower',
-                extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                        delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
-    plt.title(f"{pulse_type.capitalize()} pulse")
-    plt.xlabel("ΔV [mV]")
-    plt.ylabel("Δt [ps]")
-    plt.colorbar(im, label="log10(Infidelity)")
-    plt.grid(False)
-    save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_1)
+# # --- Individual plots with contour ---
+# for pulse_type in pulse_types:
+#     plt.figure(figsize=(16,9))
+#     im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
+#                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+#                     aspect='auto')
+#     # Highlight log10(infidelity) = -4 with a red contour
+#     plt.contour(np.log10(infidelity_maps[pulse_type]),
+#                 levels=[-4],
+#                 colors='red',
+#                 linewidths=2,
+#                 origin='lower',
+#                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
+#     plt.title(f"{pulse_type.capitalize()} pulse")
+#     plt.xlabel("ΔV [mV]")
+#     plt.ylabel("Δt [ps]")
+#     plt.colorbar(im, label="log10(Infidelity)")
+#     plt.grid(False)
+#     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_1)
 
-plt.show()
+# plt.show()
 
-# --- Clip infidelity maps to avoid log10 issues ---
-# Set a small floor value (e.g., 1e-12) to prevent log10(0)
-floor_value = 1e-6
-for pulse in pulse_types:
-    state_infidelity_maps[pulse] = np.clip(state_infidelity_maps[pulse], floor_value, None)
+# # --- Clip infidelity maps to avoid log10 issues ---
+# # Set a small floor value (e.g., 1e-12) to prevent log10(0)
+# floor_value = 1e-6
+# for pulse in pulse_types:
+#     state_infidelity_maps[pulse] = np.clip(state_infidelity_maps[pulse], floor_value, None)
 
-# --- Compute global min/max for color scaling ---
-vmin = np.log10(np.min([state_infidelity_maps[p] for p in pulse_types]))
-vmax = np.log10(np.max([state_infidelity_maps[p] for p in pulse_types]))
+# # --- Compute global min/max for color scaling ---
+# vmin = np.log10(np.min([state_infidelity_maps[p] for p in pulse_types]))
+# vmax = np.log10(np.max([state_infidelity_maps[p] for p in pulse_types]))
 
-# --- Create figure and axes with controlled width ---
-fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
+# # --- Create figure and axes with controlled width ---
+# fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
 
-for ax, pulse_type in zip(axes, pulse_types):
-    im = ax.imshow(np.log10(state_infidelity_maps[pulse_type]),
-                   origin='lower',
-                   extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                           delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-                   aspect='auto',
-                   vmin=vmin, vmax=vmax)  # same color scale
+# for ax, pulse_type in zip(axes, pulse_types):
+#     im = ax.imshow(np.log10(state_infidelity_maps[pulse_type]),
+#                    origin='lower',
+#                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+#                    aspect='auto',
+#                    vmin=vmin, vmax=vmax)  # same color scale
     
-    ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
-    ax.set_xlabel("ΔV [mV]", labelpad=5)
-    ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
+#     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+#     ax.set_xlabel("ΔV [mV]", labelpad=5)
+#     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
 
-# --- Add a single colorbar for all axes ---
-cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
-cbar.set_label("log10(Infidelity)")
+# # --- Add a single colorbar for all axes ---
+# cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
+# cbar.set_label("log10(Infidelity)")
 
-# --- Adjust layout to bring y-axis labels closer ---
-save_figure(r"Heatmap pulses", SAVE_DIR_2)
-plt.show()
+# # --- Adjust layout to bring y-axis labels closer ---
+# save_figure(r"Heatmap pulses", SAVE_DIR_2)
+# plt.show()
 
-# --- Individual plots with contour ---
-for pulse_type in pulse_types:
-    plt.figure(figsize=(16,9))
-    im = plt.imshow(np.log10(state_infidelity_maps[pulse_type]), origin='lower',
-                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-                    aspect='auto')
-    # Highlight log10(infidelity) = -4 with a red contour
-    plt.contour(np.log10(state_infidelity_maps[pulse_type]),
-                levels=[-4],
-                colors='red',
-                linewidths=2,
-                origin='lower',
-                extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-                        delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
-    plt.title(f"{pulse_type.capitalize()} pulse")
-    plt.xlabel("ΔV [mV]")
-    plt.ylabel("Δt [ps]")
-    plt.colorbar(im, label="log10(Infidelity)")
-    plt.grid(False)
-    save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_2)
+# # --- Individual plots with contour ---
+# for pulse_type in pulse_types:
+#     plt.figure(figsize=(16,9))
+#     im = plt.imshow(np.log10(state_infidelity_maps[pulse_type]), origin='lower',
+#                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+#                     aspect='auto')
+#     # Highlight log10(infidelity) = -4 with a red contour
+#     plt.contour(np.log10(state_infidelity_maps[pulse_type]),
+#                 levels=[-4],
+#                 colors='red',
+#                 linewidths=2,
+#                 origin='lower',
+#                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+#                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
+#     plt.title(f"{pulse_type.capitalize()} pulse")
+#     plt.xlabel("ΔV [mV]")
+#     plt.ylabel("Δt [ps]")
+#     plt.colorbar(im, label="log10(Infidelity)")
+#     plt.grid(False)
+#     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_2)
 
-plt.show()
+# plt.show()
 
 # #load data
 # data = np.load("infidelity_results.npz", allow_pickle=True)
@@ -630,4 +630,192 @@ plt.show()
 
 #     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, state fidelity", SAVE_DIR)
    
+# plt.show()
+
+#load data
+# Save data
+data = np.load("infidelity_jitter_results.npz", allow_pickle=True)
+
+infidelity_jitter=data["infidelity_jitter"].item()
+infidelity_jitter_std=data["infidelity_jitter_std"].item()
+infidelity_jitter_qpt=data["infidelity_jitter_qpt"].item()
+infidelity_jitter_std_qpt=data["infidelity_jitter_std_qpt"].item()
+infidelity_jitter_state=data["infidelity_jitter_state"].item()
+infidelity_jitter_std_state=data["infidelity_jitter_std_state"].item()
+sigma_jitters=data["sigma_jitters"]
+pulse_types=data["pulse_types"]
+
+# Optional: set a floor for plotting
+floor_value = 1e-7
+for pulse in pulse_types:
+    infidelity_jitter[pulse] = np.clip(infidelity_jitter[pulse], floor_value, None)
+    infidelity_jitter_state[pulse] = np.clip(infidelity_jitter_state[pulse], floor_value, None)
+    infidelity_jitter_qpt[pulse] = np.clip(infidelity_jitter_qpt[pulse], floor_value, None)
+
+colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# -------------------------------
+# Evolution fidelity plot
+plt.figure(figsize=(16,9))
+for pulse in pulse_types:
+    delta = np.array(np.abs(infidelity_jitter_std[pulse]))
+    plt.plot(sigma_jitters*1e12, infidelity_jitter[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+    plt.fill_between(
+        sigma_jitters*1e12,
+        np.array(infidelity_jitter[pulse]),
+        np.array(infidelity_jitter[pulse]) + 3*delta,
+        color='orange',
+        alpha=0.1
+    )
+
+plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+plt.xlabel("RMS Timing Jitter σ [ps]")
+plt.ylabel("Infidelity (1 - Fidelity)")
+plt.yscale('log')
+plt.title("Infidelity vs RMS Timing Jitter - evolution fidelity")
+plt.legend()
+plt.grid(True, which="both", ls="--")
+save_figure("Infidelity vs RMS Timing Jitter - evolution fidelity", SAVE_DIR)
+plt.show()
+
+# -------------------------------
+# State fidelity plot
+plt.figure(figsize=(16,9))
+for pulse in pulse_types:
+    delta = np.array(np.abs(infidelity_jitter_std_state[pulse]))
+    plt.plot(sigma_jitters*1e12, infidelity_jitter_state[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+    plt.fill_between(
+        sigma_jitters*1e12,
+        np.array(infidelity_jitter_state[pulse]),
+        np.array(infidelity_jitter_state[pulse]) + 3*delta,
+        color='orange',
+        alpha=0.1
+    )
+
+plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+plt.xlabel("RMS Timing Jitter σ [ps]")
+plt.ylabel("Infidelity (1 - Fidelity)")
+plt.yscale('log')
+plt.title("Infidelity vs RMS Timing Jitter - state fidelity")
+plt.legend()
+plt.grid(True, which="both", ls="--")
+save_figure("Infidelity vs RMS Timing Jitter - state fidelity", SAVE_DIR)
+plt.show()
+
+# -------------------------------
+# QPT fidelity plot
+plt.figure(figsize=(16,9))
+for pulse in pulse_types:
+    delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
+    plt.plot(sigma_jitters*1e12, infidelity_jitter_qpt[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+    plt.fill_between(
+        sigma_jitters*1e12,
+        np.array(infidelity_jitter_qpt[pulse]),
+        np.array(infidelity_jitter_qpt[pulse]) + 3*delta,
+        color='orange',
+        alpha=0.1
+    )
+
+plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+plt.xlabel("RMS Timing Jitter σ [ps]")
+plt.ylabel("Infidelity (1 - Fidelity)")
+plt.yscale('log')
+plt.title("Infidelity vs RMS Timing Jitter - QPT fidelity")
+plt.legend()
+plt.grid(True, which="both", ls="--")
+save_figure("Infidelity vs RMS Timing Jitter - QPT fidelity", SAVE_DIR)
+plt.show()
+
+# #load data
+# # Save data
+# data = np.load("infidelity_jitter_results_err.npz", allow_pickle=True)
+
+# infidelity_jitter=data["infidelity_jitter"].item()
+# infidelity_jitter_std=data["infidelity_jitter_std"].item()
+# infidelity_jitter_qpt=data["infidelity_jitter_qpt"].item()
+# infidelity_jitter_std_qpt=data["infidelity_jitter_std_qpt"].item()
+# infidelity_jitter_state=data["infidelity_jitter_state"].item()
+# infidelity_jitter_std_state=data["infidelity_jitter_std_state"].item()
+# sigma_jitters=data["sigma_jitters"]
+# pulse_types=data["pulse_types"]
+
+# # Optional: set a floor for plotting
+# floor_value = 1e-7
+# for pulse in pulse_types:
+#     infidelity_jitter[pulse] = np.clip(infidelity_jitter[pulse], floor_value, None)
+#     infidelity_jitter_state[pulse] = np.clip(infidelity_jitter_state[pulse], floor_value, None)
+#     infidelity_jitter_qpt[pulse] = np.clip(infidelity_jitter_qpt[pulse], floor_value, None)
+
+# colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# # -------------------------------
+# # Evolution fidelity plot
+# plt.figure(figsize=(16,9))
+# for pulse in pulse_types:
+#     delta = np.array(np.abs(infidelity_jitter_std[pulse]))
+#     plt.plot(sigma_jitters*1e12, infidelity_jitter[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+#     plt.fill_between(
+#         sigma_jitters*1e12,
+#         np.array(infidelity_jitter[pulse]),
+#         np.array(infidelity_jitter[pulse]) + 3*delta,
+#         color='orange',
+#         alpha=0.1
+#     )
+
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("RMS Timing Jitter σ [ps]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')
+# plt.title("Infidelity vs RMS Timing Jitter - evolution fidelity")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# save_figure("Infidelity vs RMS Timing Jitter err - evolution fidelity", SAVE_DIR)
+# plt.show()
+
+# # -------------------------------
+# # State fidelity plot
+# plt.figure(figsize=(16,9))
+# for pulse in pulse_types:
+#     delta = np.array(np.abs(infidelity_jitter_std_state[pulse]))
+#     plt.plot(sigma_jitters*1e12, infidelity_jitter_state[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+#     plt.fill_between(
+#         sigma_jitters*1e12,
+#         np.array(infidelity_jitter_state[pulse]),
+#         np.array(infidelity_jitter_state[pulse]) + 3*delta,
+#         color='orange',
+#         alpha=0.1
+#     )
+
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("RMS Timing Jitter σ [ps]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')
+# plt.title("Infidelity vs RMS Timing Jitter - state fidelity")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# save_figure("Infidelity vs RMS Timing Jitter err- state fidelity", SAVE_DIR)
+# plt.show()
+
+# # -------------------------------
+# # QPT fidelity plot
+# plt.figure(figsize=(16,9))
+# for pulse in pulse_types:
+#     delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
+#     plt.plot(sigma_jitters*1e12, infidelity_jitter_qpt[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+#     plt.fill_between(
+#         sigma_jitters*1e12,
+#         np.array(infidelity_jitter_qpt[pulse]),
+#         np.array(infidelity_jitter_qpt[pulse]) + 3*delta,
+#         color='orange',
+#         alpha=0.1
+#     )
+
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("RMS Timing Jitter σ [ps]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')
+# plt.title("Infidelity vs RMS Timing Jitter - QPT fidelity")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# save_figure("Infidelity vs RMS Timing Jitter err - QPT fidelity", SAVE_DIR)
 # plt.show()

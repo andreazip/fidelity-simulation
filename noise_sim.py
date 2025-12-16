@@ -6,6 +6,38 @@ from qutip import basis, sesolve, sigmax, sigmay, sigmaz
 import matplotlib.pyplot as plt
 from scipy.signal import welch, get_window
 from tqdm import tqdm
+from pathlib import Path
+import re
+
+def title_to_filename(title, ext="png"):
+    clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
+    return clean.lower().strip('_') + f".{ext}"
+
+def save_figure(title, folder="figures", ext="png"):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    plt.title(title)
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300, bbox_inches="tight")
+
+    plt.close()
+
+PPT_STYLE = {
+    "font.size": 20,
+    "axes.titlesize": 24,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 15,
+    "figure.figsize": (16, 9),  # 16:9 in inches
+    "lines.linewidth": 2.5
+}
+
+plt.rcParams.update(PPT_STYLE)
+
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
+
 
 # Noise generator with arbitrary PSD
 def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
@@ -46,7 +78,6 @@ def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     f = np.fft.rfftfreq(N, 1/fs) 
 
     # Plot time-domain signals
-    plt.figure(figsize=(12,4))
     plt.plot(t, x1*1e3, label=labels[0], color='blue')
     plt.plot(t, x2*1e3, label=labels[1], color='red')
     plt.title("Time Domain")
@@ -54,9 +85,9 @@ def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     plt.ylabel("Amplitude [mV]")
     plt.legend()
     plt.grid(True)
+    plt.show()
 
     # Plot PSDs
-    plt.figure(figsize=(12,4))
     plt.semilogy(f[1:], S1[1:], label=labels[0], color='blue')  # skip DC
     plt.semilogy(f[1:], S2[1:], label=labels[1], color='red')
     plt.title("Power Spectral Density")
@@ -75,11 +106,11 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     amp_vals = np.linspace(amp_min, amp_max, N)
     alpha = 50
     Joffset = 10e3
-    V0 = 187e-3
+    V0 = 184e-3
     delta_mean = []
     delta_std  = []
     J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
-    theta = np.pi - np.arctan(np.sqrt(8))
+    theta = np.arctan(np.sqrt(8))
     t_max = theta/J0 
 
     fs = int(1000/ t_max)
@@ -117,18 +148,23 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     delta_mean = np.array(delta_mean)
     delta_std  = np.array(delta_std)
 
-    # Plot mean with shaded std
-    plt.figure(figsize=(6,4))
+    # Plot mean with shaded std)
+    plt.figure(figsize=(16,9))
     plt.plot(amp_vals*1e3, delta_mean, label="Mean Δθ")
     plt.fill_between(amp_vals *1e3, (delta_mean - 3*delta_std), (delta_mean + 3*delta_std),
                      color='orange', alpha=0.3, label="±3 std")
     # Add horizontal line at y = 4.08e-3
-    plt.axhline(y=3.79e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
+    plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
     plt.xlabel("Noise amplitude[$mV_{RMS}$]")
     plt.ylabel("Δθ ")
-    plt.title(f"Δθ vs Noise Amplitude ({iterations} realizations), $\Delta V = 0.085 \, mV $")
+    if white:
+        title = f"Δθ vs Noise Amplitude ({iterations} realizations) white noise, $\Delta V = 0.085 \, mV $"
+    if flicker:
+        title = f"Δθ vs Noise Amplitude ({iterations} realizations) flicker noise, $\Delta V = 0.085 \, mV $"
+    plt.title(title)
     plt.legend()
     plt.grid(True)
+    save_figure(title, SAVE_DIR)
     
 
 def noise_function(t, tlist, noise_array):
@@ -137,7 +173,7 @@ def noise_function(t, tlist, noise_array):
 
 alpha = 50
 Joffset = 10e3
-V0 = 187e-3
+V0 = 184e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
 t_max = 10e-9
@@ -147,17 +183,22 @@ fs = int(10000/ t_max)
 x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
 x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
 
-plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
+# plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
 
-rms_pink = np.sqrt(np.mean(x_pink**2))
-rms_white = np.sqrt(np.mean(x_white**2))
+rms_pink = np.std(x_pink)
+rms_white = np.std(x_white)
+
+mean_pink = np.mean(x_pink)
+mean_white = np.mean(x_white)
+
 
 # the signals are rms normalized
 
-print(f"{rms_pink}, {rms_white}")
+print(f"{rms_pink, mean_pink}, {rms_white, mean_white}")
 
-plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 300)
-plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 300)
-
+plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 1000)
+plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 1000)
 
 plt.show()
+
+

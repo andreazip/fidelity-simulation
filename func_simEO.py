@@ -6,13 +6,46 @@ from qutip import basis, sesolve, sigmax, sigmay, sigmaz, tensor, Qobj, qeye
 from scipy.integrate import quad
 from scipy.optimize import brentq
 from tqdm import tqdm
-from matplotlib.colors import LogNorm  
+from matplotlib.colors import LogNorm
+from pathlib import Path
+import re
+
+def title_to_filename(title, ext="png"):
+    clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
+    return clean.lower().strip('_') + f".{ext}"
+
+def save_figure(title, folder="figures", ext="png"):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    plt.title(title)
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300, bbox_inches="tight")
+
+    plt.close()
+
+
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Pulses"
+
+
+PPT_STYLE = {
+    "font.size": 20,
+    "axes.titlesize": 24,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 15,
+    "figure.figsize": (16, 9),  # 16:9 in inches
+    "lines.linewidth": 2.5
+}
+
+plt.rcParams.update(PPT_STYLE)  
 
 # ------------------------------
 #   Pulse shapes for voltage
 # ------------------------------
 
-def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None):
+def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None, jitter = 0):
     # --- Compute exchange values ---
     noise = 0
 
@@ -22,9 +55,11 @@ def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None):
         noise += pink_func(t)
     amp = amp + noise
     
+    t_end = t_end + jitter
+
     return amp if (t_start <= t <= t_end) else noise
 
-def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0,white_func= None, pink_func= None):
+def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, white_func= None, pink_func= None, jitter = 0):
     noise = 0
 
     if white_func is not None:
@@ -33,18 +68,21 @@ def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0,white_func= None, pi
         noise += pink_func(t)
 
     amp = amp + noise
+    t_start_real = t_start 
+    t_end_real = t_end + jitter
 
-    if t < t_start:
+    if t < t_start_real:
         return noise
-    if t_start <= t < t_start + rise:
-        return amp * (t - t_start)/rise if rise>0 else amp
-    if t_start + rise <= t <= t_end - fall:
+    elif t_start_real <= t < t_start_real + rise:
+        return amp * (t - t_start_real)/rise if rise > 0 else amp
+    elif t_start_real + rise <= t <= t_end_real - fall:
         return amp
-    if t_end - fall < t <= t_end:
-        return amp * (1 - (t - (t_end - fall))/fall) if fall>0 else amp
-    return noise
+    elif t_end_real - fall < t <= t_end_real:
+        return amp * (1 - (t - (t_end_real - fall))/fall) if fall > 0 else amp
+    else:
+        return noise
 
-def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None):
+def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None, jitter = 0):
     """
     RC-like pulse with flat top:
     - Exponential rise: t_start → t_start + 5*tau
@@ -58,20 +96,22 @@ def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None):
         noise += pink_func(t)
 
     amp = amp + noise
+    t_start_real = t_start 
+    t_end_real = t_end + jitter
 
-    if t < t_start or t > t_end:
+    if t < t_start_real or t > t_end_real:
         return noise
 
-    t_rise_end = t_start + 7*tau
-    t_fall_start = t_end - 7*tau
+    t_rise_end = t_start_real + 7*tau 
+    t_fall_start = t_end_real - 7*tau 
 
     if t < t_rise_end:
         # Rising edge
-        dt = t - t_start
+        dt = t - t_start_real
         return amp * (1 - np.exp(-dt / tau))
     elif t <= t_fall_start:
         # Flat top
-        return amp * (1 - np.exp(-(t_rise_end-t_start) / tau))
+        return amp * (1 - np.exp(-(t_rise_end-t_start_real) / tau))
     else:
         # Falling edge
         dt = t - t_fall_start
@@ -223,7 +263,6 @@ def run_exchange_qubit_simulation(
         t2 = 14*tau + t_const_2
         t_total = t2 + 2*t1
 
-    t_jitter = np.random.normal(0, sigma_jitter) #generate jitter on the period
     # Pulse timing
     t_start1, t_end1 = 0, t1 
     t_start2, t_end2 = t1, t1+t2 
@@ -250,33 +289,40 @@ def run_exchange_qubit_simulation(
     white_func = lambda t: np.interp(t, tlist, x_white)
     pink_func  = lambda t: np.interp(t, tlist, x_pink)
 
+    jitter12 = np.random.normal(0, sigma_jitter)
+    jitter23_1 = np.random.normal(0, sigma_jitter)
+    jitter23_2 = np.random.normal(0, sigma_jitter)
+
+    # jitter23_1 = jitter23_2 = -jitter12 # this line is for the worst case, closer to oher simulation
+
+
     # Parameter list passed into pulse generator
     if pulse_type == "square":
-        J12_params = [( t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, white_func, pink_func)]
+        J12_params = [( t_start2 + deltat/2, t_end2 - deltat/2, V1, white_func, pink_func, jitter12)]
         J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, white_func, pink_func),
-        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2 ,white_func, pink_func)
+        (t_start1 - deltat/2, t_end1 + deltat/2 , V2, white_func, pink_func, jitter23_1),
+        (t_start3 - deltat/2, t_end3 + deltat/2 , V2 ,white_func, pink_func, jitter23_2)
         ]
     elif pulse_type == "linear":
-        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, t_rise, t_fall, white_func, pink_func)]
+        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter12)]
         J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, t_rise, t_fall , white_func, pink_func),
-        (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, t_rise, t_fall, white_func, pink_func)
+        (t_start1 - deltat/2, t_end1 + deltat/2 , V2, t_rise, t_fall , white_func, pink_func, jitter23_1),
+        (t_start3 - deltat/2, t_end3 + deltat/2, V2, t_rise, t_fall, white_func, pink_func, jitter23_2)
         ]
     elif pulse_type == "RC":
             # ----------- J12 pulse (middle pulse) -----------
         # J12 pulse (middle pulse)
         J12_params = [
             # RC rise
-            (t_start2 + deltat/2, t_end2 - deltat/2 + t_jitter, V1, tau ,white_func, pink_func),
+            (t_start2 + deltat/2, t_end2 - deltat/2, V1, tau ,white_func, pink_func, jitter12),
         ]
 
         # J23 pulses (first and last pulse)
         J23_params = [
             # First pulse rise
-            (t_start1 - deltat/2, t_end1 + deltat/2 + t_jitter, V2, tau , white_func, pink_func),
+            (t_start1 - deltat/2, t_end1 + deltat/2, V2, tau , white_func, pink_func, jitter23_1),
             # Second pulse rise
-            (t_start3 - deltat/2, t_end3 + deltat/2 + t_jitter, V2, tau, white_func, pink_func),
+            (t_start3 - deltat/2, t_end3 + deltat/2, V2, tau, white_func, pink_func, jitter23_2),
         ]
 
 
@@ -323,7 +369,7 @@ def run_exchange_qubit_simulation(
         plt.legend()
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [MHz]")
-        plt.title("Pulse Sequence")
+        save_figure(f"Pulse Sequence J {pulse_type} ", SAVE_DIR)
 
         V12_func = make_voltage_function(pulse_type, J12_params)
         V23_func = make_voltage_function(pulse_type, J23_params)
@@ -335,8 +381,8 @@ def run_exchange_qubit_simulation(
         plt.legend()
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [mV]")
-        plt.title("Pulse Sequence")
-        plt.show()
+        save_figure(f"Pulse Sequence V {pulse_type}", SAVE_DIR)
+
 
 
     if plot_noise:
@@ -407,23 +453,23 @@ def plot_noise_func(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Nois
 
 pulse_types = ["square", "linear", "RC"]
 
-# # calibration step
-# for pulse_type in pulse_types:
-#     fidelity, fidelity_pulse, f_QPT = run_exchange_qubit_simulation(
-#         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#         deltaV=0,
-#         pulse_type=pulse_type,
-#         t_rise = 1e-9,
-#         t_fall = 1e-9,
-#         deltat=0.0,
-#         tau = 0.1e-9, 
-#         plot_bloch=False,
-#         plot_pulse=False,
-#         white_amp = 0,
-#         pink_amp = 0,
-#     )
-#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
-#     print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
+# calibration step
+for pulse_type in pulse_types:
+    fidelity, fidelity_pulse, f_QPT = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV=0,
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat=0.0,
+        tau = 0.1e-9, 
+        plot_bloch=True,
+        plot_pulse=True,
+        white_amp = 0,
+        pink_amp = 0,
+    )
+    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
+    print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
 
    
 # # check deltaV
@@ -947,71 +993,71 @@ pulse_types = ["square", "linear", "RC"]
 #     plt.grid(False)
 #     plt.show()
 
-# # errors delta t and delta V
-white_amps = np.linspace(0, 0.3e-3, 10)
-pink_amps = np.linspace(0, 0.6e-4, 10)
-iterations = 50 # reduced for speed, increase if needed
+# # # errors delta t and delta V
+# white_amps = np.linspace(0, 0.3e-3, 10)
+# pink_amps = np.linspace(0, 0.6e-4, 10)
+# iterations = 50 # reduced for speed, increase if needed
 
-# Storage: 3D array [pulse, white_amp, pink_amp]
-infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_std = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_qpt = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_std_qpt = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_state = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
-infidelities_std_state = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# # Storage: 3D array [pulse, white_amp, pink_amp]
+# infidelities = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_std = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_qpt = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_std_qpt = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_state = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
+# infidelities_std_state = {pulse: np.zeros((len(white_amps), len(pink_amps))) for pulse in pulse_types}
 
-# Simulation loop
-for pulse in tqdm(pulse_types, desc="Pulse types"):
-    for i, w_amp in enumerate(tqdm(white_amps, desc=f"{pulse} - White sweep", leave=False)):
-        for j, p_amp in enumerate(tqdm(pink_amps, desc="Pink sweep", leave=False)):
-            fidelities = []
-            fidelities_qpt = []
-            fidelities_state = []
-            for _ in range(iterations):
-                fidelity_state, fidelity, fidelity_qpt = run_exchange_qubit_simulation(
-                    J_offset=10e3,
-                    V1=184e-3,
-                    V2=184e-3,
-                    alpha=50,
-                    deltaV=0.05e-3,
-                    pulse_type=pulse,
-                    t_rise=1e-9,
-                    t_fall=1e-9,
-                    deltat=1e-12,
-                    tau=0.1e-9,
-                    plot_bloch=False,
-                    plot_pulse=False,
-                    plot_noise=False,
-                    white_amp=w_amp,
-                    pink_amp=p_amp,
-                )
-                fidelities.append(fidelity)
-                fidelities_qpt.append(fidelity_qpt)
-                fidelities_state.append(fidelity_state)
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     for i, w_amp in enumerate(tqdm(white_amps, desc=f"{pulse} - White sweep", leave=False)):
+#         for j, p_amp in enumerate(tqdm(pink_amps, desc="Pink sweep", leave=False)):
+#             fidelities = []
+#             fidelities_qpt = []
+#             fidelities_state = []
+#             for _ in range(iterations):
+#                 fidelity_state, fidelity, fidelity_qpt = run_exchange_qubit_simulation(
+#                     J_offset=10e3,
+#                     V1=184e-3,
+#                     V2=184e-3,
+#                     alpha=50,
+#                     deltaV=0.05e-3,
+#                     pulse_type=pulse,
+#                     t_rise=1e-9,
+#                     t_fall=1e-9,
+#                     deltat=1e-12,
+#                     tau=0.1e-9,
+#                     plot_bloch=False,
+#                     plot_pulse=False,
+#                     plot_noise=False,
+#                     white_amp=w_amp,
+#                     pink_amp=p_amp,
+#                 )
+#                 fidelities.append(fidelity)
+#                 fidelities_qpt.append(fidelity_qpt)
+#                 fidelities_state.append(fidelity_state)
 
-            fidelities = np.array(fidelities)
-            infidelities[pulse][i, j] = 1 - np.mean(fidelities)  # store mean infidelity
-            infidelities_std[pulse][i,j] = np.std(fidelities)  # store std infidelity
+#             fidelities = np.array(fidelities)
+#             infidelities[pulse][i, j] = 1 - np.mean(fidelities)  # store mean infidelity
+#             infidelities_std[pulse][i,j] = np.std(fidelities)  # store std infidelity
 
-            fidelities_qpt = np.array(fidelities_qpt)
-            infidelities_qpt[pulse][i, j] = 1 - np.mean(fidelities_qpt)  # store mean infidelity
-            infidelities_std_qpt[pulse][i,j] = np.std(fidelities_qpt)  # store std infidelity
+#             fidelities_qpt = np.array(fidelities_qpt)
+#             infidelities_qpt[pulse][i, j] = 1 - np.mean(fidelities_qpt)  # store mean infidelity
+#             infidelities_std_qpt[pulse][i,j] = np.std(fidelities_qpt)  # store std infidelity
 
-            fidelities_state = np.array(fidelities_state)
-            infidelities_state[pulse][i, j] = 1 - np.mean(fidelities_state)  # store mean infidelity
-            infidelities_std_state[pulse][i,j] = np.std(fidelities_state)  # store std infidelity
+#             fidelities_state = np.array(fidelities_state)
+#             infidelities_state[pulse][i, j] = 1 - np.mean(fidelities_state)  # store mean infidelity
+#             infidelities_std_state[pulse][i,j] = np.std(fidelities_state)  # store std infidelity
 
-#saving data
-np.savez("infidelity_results_heatmap_err.npz",
-         infidelities = infidelities,
-         infidelities_std = infidelities_std,
-         infidelities_qpt = infidelities_qpt,
-         infidelities_std_qpt = infidelities_std_qpt,
-         infidelities_state = infidelities_state,
-         infidelities_std_state = infidelities_std_state,
-         white_amps=white_amps,
-         pink_amps=pink_amps,
-         pulse_types=pulse_types)
+# #saving data
+# np.savez("infidelity_results_heatmap_err.npz",
+#          infidelities = infidelities,
+#          infidelities_std = infidelities_std,
+#          infidelities_qpt = infidelities_qpt,
+#          infidelities_std_qpt = infidelities_std_qpt,
+#          infidelities_state = infidelities_state,
+#          infidelities_std_state = infidelities_std_state,
+#          white_amps=white_amps,
+#          pink_amps=pink_amps,
+#          pulse_types=pulse_types)
 
 
 # # Plot heatmaps
@@ -1157,4 +1203,226 @@ np.savez("infidelity_results_heatmap_err.npz",
 #     plt.colorbar(im, label="log10(Infidelity)")
 #     plt.grid(False)
 
+# plt.show()
+
+# # # check pink noise
+# iterations = 1
+
+# # Dictionaries to store results
+# fidelity_means = {}
+# fidelity_stds = {}
+
+# fidelity_means_qpt = {}
+# fidelity_stds_qpt = {}
+
+# for pulse_type in tqdm(pulse_types):
+#     fidelities = []
+#     fidelities_qpt = []
+
+#     for _ in range(iterations):
+#         _, fidelity, f_QPT = run_exchange_qubit_simulation(
+#             J_offset = 10e3,
+#             V1 = 184e-3,
+#             V2 = 184e-3,
+#             alpha = 50,
+#             deltaV = 0,
+#             pulse_type = pulse_type,
+#             t_rise = 1e-9,
+#             t_fall = 1e-9,
+#             deltat = 0,
+#             tau = 0.1e-9,
+#             plot_bloch = False,
+#             plot_pulse = True,  
+#             plot_noise = False, 
+#             white_amp = 0,
+#             pink_amp = 0,
+#             sigma_jitter= 30e-12
+#         )
+#         fidelities.append(fidelity)
+#         fidelities_qpt.append(f_QPT)
+
+#     # Compute mean and std
+#     fidelities = np.array(fidelities)
+#     fidelity_means[pulse_type] = np.mean(fidelities)
+#     fidelity_stds[pulse_type] = np.std(fidelities)
+
+#     # Compute mean and std
+#     fidelities_qpt = np.array(fidelities_qpt)
+#     fidelity_means_qpt[pulse_type] = np.mean(fidelities_qpt)
+#     fidelity_stds_qpt[pulse_type] = np.std(fidelities_qpt)
+
+#     print(f"Operator fidelity: \n {pulse_type}: Mean fidelity = {fidelity_means[pulse_type]*100:.5f}%, "
+#           f"Std = {fidelity_stds[pulse_type]*100:.5f}%")
+    
+#     print(f"QPT: \n {pulse_type}: Mean fidelity = {fidelity_means_qpt[pulse_type]*100:.5f}%, "
+#           f"Std = {fidelity_stds_qpt[pulse_type]*100:.5f}%")
+
+# # Example list of RMS timing jitter values
+# sigma_jitters = np.linspace(0, 20e-12, 10)  # 0 to 2.5 ps
+
+# iterations = 300  # number of Monte Carlo runs
+
+# # Dictionaries to store results
+# infidelity_jitter = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_state = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std_state = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_qpt = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std_qpt = {pulse: [] for pulse in pulse_types}
+
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     for sigma_j in tqdm(sigma_jitters, desc=f"{pulse} - Jitter sweep", leave=False):
+#         fidelities = []
+#         fidelities_state = []
+#         fidelities_qpt = []
+
+#         for _ in range(iterations):
+#             fidelity_state, fidelity, fidelity_qpt = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV=0.05e-3,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat=1e-12,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 sigma_jitter=sigma_j,   # pass RMS jitter here
+#             )
+#             fidelities.append(fidelity)
+#             fidelities_qpt.append(fidelity_qpt)
+#             fidelities_state.append(fidelity_state)
+
+#         # Convert to arrays
+#         fidelities = np.array(fidelities)
+#         fidelities_qpt = np.array(fidelities_qpt)
+#         fidelities_state = np.array(fidelities_state)
+
+#         # Store mean infidelity and std
+#         infidelity_jitter[pulse].append(1 - np.mean(fidelities))
+#         infidelity_jitter_std[pulse].append(np.std(1 - fidelities))
+
+#         infidelity_jitter_qpt[pulse].append(1 - np.mean(fidelities_qpt))
+#         infidelity_jitter_std_qpt[pulse].append(np.std(1 - fidelities_qpt))
+
+#         infidelity_jitter_state[pulse].append(1 - np.mean(fidelities_state))
+#         infidelity_jitter_std_state[pulse].append(np.std(1 - fidelities_state))
+
+# # Save data
+# np.savez("infidelity_jitter_results_err.npz",
+#          infidelity_jitter=infidelity_jitter,
+#          infidelity_jitter_std=infidelity_jitter_std,
+#          infidelity_jitter_qpt=infidelity_jitter_qpt,
+#          infidelity_jitter_std_qpt=infidelity_jitter_std_qpt,
+#          infidelity_jitter_state=infidelity_jitter_state,
+#          infidelity_jitter_std_state=infidelity_jitter_std_state,
+#          sigma_jitters=sigma_jitters,
+#          pulse_types=pulse_types)
+
+# # Plotting
+# plt.figure(figsize=(10,6))
+# colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# for pulse in pulse_types:
+#     plt.errorbar(sigma_jitters*1e12, infidelity_jitter[pulse], 
+#                  yerr=infidelity_jitter_std[pulse], 
+#                  fmt='o-', color=colors[pulse], label=f"{pulse} (RMS jitter)")
+
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("RMS Timing Jitter σ [ps]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')
+# plt.title("Infidelity vs Timing Jitter for Different Pulses")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
+# plt.show()
+
+# # Example list of RMS timing jitter values
+# sigma_jitters = np.linspace(0, 20e-12, 10)  # 0 to 2.5 ps
+
+# iterations = 10  # number of Monte Carlo runs
+
+# # Dictionaries to store results
+# infidelity_jitter = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_state = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std_state = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_qpt = {pulse: [] for pulse in pulse_types}
+# infidelity_jitter_std_qpt = {pulse: [] for pulse in pulse_types}
+
+# # Simulation loop
+# for pulse in tqdm(pulse_types, desc="Pulse types"):
+#     for sigma_j in tqdm(sigma_jitters, desc=f"{pulse} - Jitter sweep", leave=False):
+#         fidelities = []
+#         fidelities_state = []
+#         fidelities_qpt = []
+
+#         for _ in range(iterations):
+#             fidelity_state, fidelity, fidelity_qpt = run_exchange_qubit_simulation(
+#                 J_offset=10e3,
+#                 V1=184e-3,
+#                 V2=184e-3,
+#                 alpha=50,
+#                 deltaV=0,
+#                 pulse_type=pulse,
+#                 t_rise=1e-9,
+#                 t_fall=1e-9,
+#                 deltat=0,
+#                 tau=0.1e-9,
+#                 plot_bloch=False,
+#                 plot_pulse=False,
+#                 plot_noise=False,
+#                 sigma_jitter=sigma_j,   # pass RMS jitter here
+#             )
+#             fidelities.append(fidelity)
+#             fidelities_qpt.append(fidelity_qpt)
+#             fidelities_state.append(fidelity_state)
+
+#         # Convert to arrays
+#         fidelities = np.array(fidelities)
+#         fidelities_qpt = np.array(fidelities_qpt)
+#         fidelities_state = np.array(fidelities_state)
+
+#         # Store mean infidelity and std
+#         infidelity_jitter[pulse].append(1 - np.mean(fidelities))
+#         infidelity_jitter_std[pulse].append(np.std(1 - fidelities))
+
+#         infidelity_jitter_qpt[pulse].append(1 - np.mean(fidelities_qpt))
+#         infidelity_jitter_std_qpt[pulse].append(np.std(1 - fidelities_qpt))
+
+#         infidelity_jitter_state[pulse].append(1 - np.mean(fidelities_state))
+#         infidelity_jitter_std_state[pulse].append(np.std(1 - fidelities_state))
+
+# # Save data
+# np.savez("infidelity_jitter_results.npz",
+#          infidelity_jitter=infidelity_jitter,
+#          infidelity_jitter_std=infidelity_jitter_std,
+#          infidelity_jitter_qpt=infidelity_jitter_qpt,
+#          infidelity_jitter_std_qpt=infidelity_jitter_std_qpt,
+#          infidelity_jitter_state=infidelity_jitter_state,
+#          infidelity_jitter_std_state=infidelity_jitter_std_state,
+#          sigma_jitters=sigma_jitters,
+#          pulse_types=pulse_types)
+
+# # Plotting
+# plt.figure(figsize=(10,6))
+# colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# for pulse in pulse_types:
+#     plt.errorbar(sigma_jitters*1e12, infidelity_jitter[pulse], 
+#                  yerr=infidelity_jitter_std[pulse], 
+#                  fmt='o-', color=colors[pulse], label=f"{pulse} (RMS jitter)")
+
+# plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# plt.xlabel("RMS Timing Jitter σ [ps]")
+# plt.ylabel("Infidelity (1 - Fidelity)")
+# plt.yscale('log')
+# plt.title("Infidelity vs Timing Jitter for Different Pulses")
+# plt.legend()
+# plt.grid(True, which="both", ls="--")
 # plt.show()

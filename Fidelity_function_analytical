@@ -2,10 +2,45 @@ import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import differential_evolution
+from pathlib import Path
+import re
 
 # ----------------------------------------
 # Fidelity functions
 # ----------------------------------------
+def title_to_filename(title, ext="png"):
+    clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
+    return clean.lower().strip('_') + f".{ext}"
+
+def save_figure(title, folder="figures", ext="png"):
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    plt.title(title)
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300, bbox_inches="tight")
+
+    plt.close()
+
+
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Infidelities"
+SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Infidelities\fixed3"
+
+floor_value = 1e-6
+
+PPT_STYLE = {
+    "font.size": 20,
+    "axes.titlesize": 24,
+    "axes.labelsize": 18,
+    "xtick.labelsize": 20,
+    "ytick.labelsize": 20,
+    "legend.fontsize": 15,
+    "figure.figsize": (16, 9),  # 16:9 in inches
+    "lines.linewidth": 2.5
+}
+
+plt.rcParams.update(PPT_STYLE)
+
 def F_n_z(epsilon1, epsilon2):
     return (np.cos(epsilon2) * np.cos(epsilon1) - 0.5 * np.sin(epsilon2) * np.sin(epsilon1))**2
 
@@ -71,6 +106,7 @@ def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", ti
     ax.set_ylabel(ylabel)
     ax.set_zlabel(zlabel)
     ax.set_title(title)
+    plt.close()
     
 
 # ----------------------------------------
@@ -84,23 +120,32 @@ def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"
     # nz_min = np.min(inf[inf > 0])
     # # Replace zeros in INFIDELITY
     # inf[inf == 0] = nz_min
-    plt.figure(figsize=(6,5))
+    inf = np.clip(inf, 1e-15, None)
     Z_plot = np.log10(inf)  # log of infidelity
+    # Compute log-infidelity safely
+    
     im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
                     origin='lower', cmap='viridis', aspect='auto')
     plt.colorbar(im, label='Infidelity')
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     plt.title(title)
+    save_figure(rf"{title}", SAVE_DIR)
     
 # ----------------------------------------
 # Heatmap plotting for different
 # ----------------------------------------
 def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", ylabel="ε2", title="Infidelity Heatmap for different $\\theta$"):
-    fig, axes = plt.subplots(1, len(theta_list), figsize=(5*len(theta_list), 4))
+    fig, axes = plt.subplots(
+    1,
+    len(theta_list),
+    figsize=(16 * len(theta_list) / 3, 9)
+)
 
     for ax, theta2 in zip(axes, theta_list):
         Z = 1 - F(theta2, E1, E2, E3)
+        # Compute log-infidelity safely
+        Z = np.clip(Z, 1e-15, None)
         if fixed_3:
             im = ax.pcolormesh(E1, E2, np.log10(Z), shading='auto')
             ax.set_title(f"θ₂ = {theta2:.2f}")
@@ -114,9 +159,13 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
 
     fig.colorbar(im, ax=axes.ravel().tolist(), label="1 - F")
     # Add a figure-wide title
-    fig.suptitle(title, fontsize=16)
+    #fig.suptitle(title, fontsize=16)
+    if fixed_3:
+        save_figure(rf"θ₂ = {theta2:.2f}", SAVE_DIR_1)
+    else:
+        save_figure(rf"θ₂ = {theta2:.2f}", SAVE_DIR)
 
-    #plt.show()
+
 
 def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=100, resolution_eps=100):
     """
@@ -149,14 +198,13 @@ def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=1
     Z = np.log10(np.clip(1 - F_vals, 1e-15, None))
         
     # Plot heatmap
-    plt.figure(figsize=(6,5))
     im = plt.pcolormesh(EPS, THETA, Z, shading='auto', cmap='viridis')
     plt.colorbar(im, label='Infidelity')
-    plt.xlabel("ε (all equal)")
+    plt.xlabel("($\epsilon_1 = \epsilon_3 = -\epsilon_2 = \epsilon$)")
     plt.ylabel("θ₂")
-    plt.title("Infidelity Heatmap vs θ₂ and ε (all eps equal)")
-    plt.show()
-
+    plt.title("Infidelity Heatmap vs θ₂ and ($\epsilon_1 = \epsilon_3 = -\epsilon_2$))")
+    save_figure(r"Infidelity Heatmap vs θ₂ and ε ($\epsilon_1 = \epsilon_3 = -\epsilon_2$)", SAVE_DIR)
+   
 # ----------------------------------------
 # Example usage for 2D fidelities
 # ----------------------------------------
@@ -165,20 +213,20 @@ def compute_n_z():
     eps_range = (-6e-3, 6e-3)
     E1, E2, _, Z = compute_grid(F_n_z, eps1_range=eps_range, eps2_range=eps_range)
     plot_heatmap(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{n,z}$ Heatmap")
-    plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{n,z}$ Surface")
+    #plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{n,z}$ Surface")
 
 # F_x_z heatmap
 def compute_x_z():
     eps_range = (-7e-3, 7e-3)
     E1, E2, _, Z = compute_grid(F_x_z, eps1_range=eps_range, eps2_range=eps_range)
     plot_heatmap(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Heatmap")
-    plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Surface")
+    #plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,z}$ Surface")
 
 def compute_x_x():
     eps_range = (-5e-3, 5e-3)
     E1, E2, _, Z = compute_grid(F_x_x, eps1_range=eps_range, eps2_range=eps_range)
     plot_heatmap(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,x}$ Heatmap")
-    plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,x}$ Surface")
+    #plot_surface_3d(E1[:,:,0], E2[:,:,0], Z[:,:,0], title="$1-F_{x,x}$ Surface")
 
 def compute_z_n_z_fixed3():
     #Example usage for 3D fidelities (theta2-dependent)
@@ -189,10 +237,10 @@ def compute_z_n_z_fixed3():
     eps2 = np.linspace(*eps2_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
     Z1 = F(theta2, E1, E2, eps3_fixed)
-    plot_surface_3d(E1, E2, Z1,
-                    xlabel="ε1",
-                    ylabel="ε2",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+    # #plot_surface_3d(E1, E2, Z1,
+    #                 xlabel="ε1",
+    #                 ylabel="ε2",
+    #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
     plot_heatmap(E1, E2, Z1,
                 xlabel="ε1",
@@ -208,10 +256,10 @@ def compute_z_n_z_fixed2():
     eps3 = np.linspace(*eps3_range, 150)
     E1, E3 = np.meshgrid(eps1, eps3)
     Z2 = F(theta2, E1, eps2_fixed, E3)
-    plot_surface_3d(E1, E3, Z2,
-                    xlabel="ε1",
-                    ylabel="ε3",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
+   # plot_surface_3d(E1, E3, Z2,
+                    # xlabel="ε1",
+                    # ylabel="ε3",
+                    # title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
     plot_heatmap(E1, E3, Z2,
                 xlabel="ε1",
                 ylabel="ε3",
@@ -226,10 +274,10 @@ def compute_z_n_z_fixed3():
     eps2 = np.linspace(*eps2_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
     Z1 = F(theta2, E1, E2, eps3_fixed)
-    plot_surface_3d(E1, E2, Z1,
-                    xlabel="ε1",
-                    ylabel="ε2",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+    # plot_surface_3d(E1, E2, Z1,
+    #                 xlabel="ε1",
+    #                 ylabel="ε2",
+    #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
     plot_heatmap(E1, E2, Z1,
                 xlabel="ε1",
@@ -245,10 +293,10 @@ def compute_n_z_n_fixed2():
     eps3 = np.linspace(*eps3_range, 150)
     E1, E3 = np.meshgrid(eps1, eps3)
     Z2 = F_nzn(theta2, E1, eps2_fixed, E3)
-    plot_surface_3d(E1, E3, Z2,
-                    xlabel="ε1",
-                    ylabel="ε3",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
+    # plot_surface_3d(E1, E3, Z2,
+    #                 xlabel="ε1",
+    #                 ylabel="ε3",
+    #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps2={eps2_fixed:.3f})")
     plot_heatmap(E1, E3, Z2,
                 xlabel="ε1",
                 ylabel="ε3",
@@ -263,10 +311,10 @@ def compute_n_z_n_fixed3():
     eps2 = np.linspace(*eps2_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
     Z1 = F_nzn(theta2, E1, E2, eps3_fixed)
-    plot_surface_3d(E1, E2, Z1,
-                    xlabel="ε1",
-                    ylabel="ε2",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+    # plot_surface_3d(E1, E2, Z1,
+    #                 xlabel="ε1",
+    #                 ylabel="ε2",
+    #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
     plot_heatmap(E1, E2, Z1,
                 xlabel="ε1",
@@ -281,10 +329,10 @@ def compute_z_z_z_fixed3():
     eps2 = np.linspace(*eps2_range, 150)
     E1, E2 = np.meshgrid(eps1, eps2)
     Z3 = F_x_x_x( E1, E2, eps3_fixed)
-    plot_surface_3d(E1, E2, Z3,
-                    xlabel="ε1",
-                    ylabel="ε2",
-                    title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
+    # plot_surface_3d(E1, E2, Z3,
+    #                 xlabel="ε1",
+    #                 ylabel="ε2",
+    #                 title=f"Infidelity 1-F(theta2={theta2:.2f}, eps3={eps3_fixed:.3f})")
 
     plot_heatmap(E1, E2, Z3,
                 xlabel="ε1",
@@ -348,15 +396,15 @@ def find_minimal_error_threshold(theta2, target_infidelity=1e-4, e_max=0.5):
     return high, F_min, params
 
 def main():
-    # #xz rotation
-    # compute_x_z()
+    # # #xz rotation
+    compute_x_z()
 
-    # #nz rotation        
-    # compute_n_z()
+    # # #nz rotation        
+    compute_n_z()
 
-    # ##zz rotation
-    # compute_x_x() #xx same as zz
-    # plt.show()
+    # # ##zz rotation
+    compute_x_x() #xx same as zz
+    # # plt.show()
 
     # #znz rotation
     compute_z_n_z_fixed2() #fixing epsilon 2
@@ -367,11 +415,11 @@ def main():
     compute_n_z_n_fixed3() #fixing epsilon 3
 
     # #zzz rotation
-    # compute_z_z_z_fixed3() #centered where the argument of cos is 0
-    # plt.show()
+    compute_z_z_z_fixed3() #centered where the argument of cos is 0
+
 
     # understand evoution with theta
-    # compute_different_theta()
+    compute_different_theta()
     
 
 main()
@@ -385,5 +433,3 @@ print("Minimal e* =", e_star)
 print("At this error, worst-case F =", F_min_star)
 print("So 1 - F =", 1 - F_min_star)
 print("Error values producing failure:", params_star)
-
-plt.show()
