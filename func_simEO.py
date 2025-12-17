@@ -26,6 +26,7 @@ def save_figure(title, folder="figures", ext="png"):
 
 
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Pulses"
+SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Pulses_noisy"
 
 
 PPT_STYLE = {
@@ -154,15 +155,13 @@ def calculate_fidelity(U, U_ideal):
     dim = U.shape[0]*U_ideal.shape[1]
     return np.abs(np.trace((U.dag() * U_ideal).full()))**2/(dim)
 
-
-
 def fidelity_QPT(U, U_ideal):
     # Ideal superoperator. In case I want to use error operator, it would be the identity!
     S_ideal = tensor(U_ideal, U_ideal.dag())
     S = tensor(U, U.dag())
     d = U_ideal.shape[0]
 
-    # process fidelity computAation
+    # process fidelity computation
     process_fidelity = np.trace(S_ideal.dag().full()@ S.full())/d**2
     
     # Average gate fidelity (standard formula)
@@ -369,7 +368,7 @@ def run_exchange_qubit_simulation(
         plt.legend()
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [MHz]")
-        save_figure(f"Pulse Sequence J {pulse_type} ", SAVE_DIR)
+        save_figure(f"Pulse Sequence J {pulse_type} ", SAVE_DIR_1)
 
         V12_func = make_voltage_function(pulse_type, J12_params)
         V23_func = make_voltage_function(pulse_type, J23_params)
@@ -381,7 +380,7 @@ def run_exchange_qubit_simulation(
         plt.legend()
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [mV]")
-        save_figure(f"Pulse Sequence V {pulse_type}", SAVE_DIR)
+        save_figure(f"Pulse Sequence V {pulse_type}", SAVE_DIR_1)
 
 
 
@@ -454,41 +453,42 @@ def plot_noise_func(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Nois
 pulse_types = ["square", "linear", "RC"]
 
 # calibration step
-for pulse_type in pulse_types:
-    fidelity, fidelity_pulse, f_QPT = run_exchange_qubit_simulation(
-        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-        deltaV=0,
-        pulse_type=pulse_type,
-        t_rise = 1e-9,
-        t_fall = 1e-9,
-        deltat=0.0,
-        tau = 0.1e-9, 
-        plot_bloch=True,
-        plot_pulse=True,
-        white_amp = 0,
-        pink_amp = 0,
-    )
-    print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
-    print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
-
-   
-# # check deltaV
 # for pulse_type in pulse_types:
-#     fidelity_state, fidelity, f_QPT = run_exchange_qubit_simulation(
+#     fidelity, fidelity_pulse, f_QPT = run_exchange_qubit_simulation(
 #         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#         deltaV= 0.085e-3, 
+#         deltaV=0,
 #         pulse_type=pulse_type,
 #         t_rise = 1e-9,
 #         t_fall = 1e-9,
-#         deltat= 0,
+#         deltat=0.0,
 #         tau = 0.1e-9, 
-#         plot_bloch=False,
-#         plot_pulse= True,
+#         plot_bloch=True,
+#         plot_pulse=True,
 #         white_amp = 0,
 #         pink_amp = 0,
 #     )
-#     print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
-#     print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
+    # print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
+    # print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
+
+   
+# check deltaV
+for pulse_type in pulse_types:
+    fidelity_state, fidelity, f_QPT = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV= 0, 
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat= 0,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse= True,
+        white_amp = 0,
+        pink_amp = 0.1e-3,
+    )
+    # print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
+    print(f"Final fidelity {pulse_type}: pulse: {fidelity*100:.5f} %")
+    #print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
 
 # # check noise
 # for pulse_type in pulse_types:

@@ -40,14 +40,14 @@ SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Yea
 
 
 # Noise generator with arbitrary PSD
-def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
+def noise_psd(T, fs=500e6, psd_func=lambda f: 1):
         N = int(T * fs)
         N = N + 1
         freqs = np.fft.rfftfreq(N,1/fs)
         #should understand if needed
-        freqs =np.where(freqs==0, 1/T, freqs )
+        freqs = freqs[1:]
 
-        X_white = np.fft.rfft(np.random.randn(N))
+        X_white = np.fft.rfft(np.random.randn(N-1))
 
         S = np.sqrt(psd_func(freqs))
         S = S/np.sqrt(np.mean(S**2))
@@ -58,7 +58,7 @@ def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         x = np.fft.irfft(X_shaped, n=N)
 
         # Normalize to unit RMS ---
-        x_rms = x/np.sqrt(np.mean(x**2))
+        x_rms = x/np.std(x)
 
         return x_rms, S**2
 
@@ -69,13 +69,14 @@ def white_psd(f):
 def pink_psd(f):
    return 1/np.where(f == 0, float('inf'), f)
 
-def plot_noise(x1, x2, S1, S2, fs=1e3, labels=('White noise', 'Flicker Noise')):
+def plot_noise(x1, x2, S1, S2, fs=500e6, labels=('White noise', 'Flicker Noise')):
     N = len(x1)
     t = np.arange(N) / fs
 
     # Frequency axis for PSD
     N = N + 1
     f = np.fft.rfftfreq(N, 1/fs) 
+    f = f[1:]
 
     # Plot time-domain signals
     plt.plot(t, x1*1e3, label=labels[0], color='blue')
@@ -104,6 +105,8 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     """
     
     amp_vals = np.linspace(amp_min, amp_max, N)
+
+    # physical value definition
     alpha = 50
     Joffset = 10e3
     V0 = 184e-3
@@ -111,10 +114,13 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     delta_std  = []
     J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
     theta = np.arctan(np.sqrt(8))
-    t_max = theta/J0 
 
-    fs = int(1000/ t_max)
-    N = int(t_max*fs) 
+    t_max = theta/J0 
+    fs = 1e12
+    N = int(t_max*fs)
+    
+
+    print(t_max, fs, N)
     t = np.linspace(t_min, t_max, N)   # physical time axis
     
     for amp in tqdm(amp_vals):
@@ -154,7 +160,7 @@ def plot_delta_theta(amp_min, amp_max, N = 200, white=False, flicker=False, t_mi
     plt.fill_between(amp_vals *1e3, (delta_mean - 3*delta_std), (delta_mean + 3*delta_std),
                      color='orange', alpha=0.3, label="±3 std")
     # Add horizontal line at y = 4.08e-3
-    plt.axhline(y=4.08e-3, color='red', linestyle='--', label="Threshold 4.08e-3")
+    plt.axhline(y=8.2e-3, color='red', linestyle='--', label="Threshold 8.2e-3")
     plt.xlabel("Noise amplitude[$mV_{RMS}$]")
     plt.ylabel("Δθ ")
     if white:
@@ -176,14 +182,43 @@ Joffset = 10e3
 V0 = 184e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
-t_max = 10e-9
 
-fs = int(10000/ t_max)
+T = theta/J0
 
-x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
-x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
+fs = 1e12
 
-# plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
+x_white, S_white = noise_psd(T, fs,  psd_func=lambda f: white_psd(f))
+x_pink, S_pink = noise_psd(T, fs,  psd_func=lambda f: pink_psd(f))
+
+plot_noise(x_white, x_pink, S_white, S_pink, fs=fs)
+
+
+
+N = int(T * fs)
+f = np.fft.rfftfreq(N,1/fs)
+#should understand if needed
+f =np.where(f==0, 1/T, f )
+
+X_white = np.fft.rfft(100*x_white)
+S_white = 1/(N*fs) * np.abs(X_white)**2
+
+X_pink = np.fft.rfft(100*x_pink)
+S_pink = 1/(N*fs) *np.abs(X_pink)**2
+# the signals are rms normalized
+# Plot PSDs
+plt.semilogy(f, S_white*1e6, color='blue')  # skip DC
+plt.semilogy(f, S_pink*1e6, color='red')
+plt.title("Power Spectral Density")
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("PSD $[mV^2/Hz]$")
+plt.legend()
+plt.grid(True)
+plt.show()
+
+df = f[2]-f[1]
+# Total power
+P_white = np.sum(S_white) * df *2
+P_pink  = np.sum(S_pink[1:])  * df *2
 
 rms_pink = np.std(x_pink)
 rms_white = np.std(x_white)
@@ -191,8 +226,8 @@ rms_white = np.std(x_white)
 mean_pink = np.mean(x_pink)
 mean_white = np.mean(x_white)
 
-
-# the signals are rms normalized
+print("White noise: Power =", P_white, "RMS =", rms_white)
+print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink)
 
 print(f"{rms_pink, mean_pink}, {rms_white, mean_white}")
 

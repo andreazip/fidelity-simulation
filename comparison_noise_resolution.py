@@ -38,16 +38,58 @@ plt.rcParams.update(PPT_STYLE)
 
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
 
+# Noise generator with arbitrary PSD
+def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
+        N = int(T * fs)
+        N = N + 1
+        freqs = np.fft.rfftfreq(N,1/fs)
+        #should understand if needed
+        freqs =np.where(freqs==0, 1/T, freqs )
 
-flicker_rms = 0.05e-3
+        X_white = np.fft.rfft(np.random.randn(N))
+
+        S = np.sqrt(psd_func(freqs))
+        S = S/np.sqrt(np.mean(S**2))
+        X_shaped = X_white * S
+
+        N = N - 1
+        # Back to time domain
+        x = np.fft.irfft(X_shaped, n=N)
+
+        # Normalize to unit RMS ---
+        x_rms = x/np.sqrt(np.mean(x**2))
+
+        return x_rms, S**2
+
+# PSD functions
+def white_psd(f):
+    return np.ones_like(f)
+
+def pink_psd(f):
+   return 1/np.where(f == 0, float('inf'), f)
+
+alpha = 50
+Joffset = 10e3
+V0 = 184e-3
+J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
+theta = np.arctan(np.sqrt(8))
+t_max = 10e-9
+N = 10000
+fs = int(N/ t_max)
+
+x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
+x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
+
+flicker_rms = 0.1e-3
 white_rms = 0.4e-3
 jitter_rms = 10e-12
 
-N = 10000
+white_noise = white_rms * x_white *1e3
+flicker_noise = flicker_rms * x_pink *1e3
+
 
 # Generate noise realizations
-flicker_noise = np.random.normal(0, flicker_rms, N) *1e3
-white_noise   = np.random.normal(0, white_rms, N) *1e3
+
 jitter_noise  = np.random.normal(0, jitter_rms, N) *1e12
 
 # Plot histogram / distribution
@@ -61,8 +103,8 @@ plt.axvline(resolution*1e3, color='k', linestyle='--', label="Resolution")
 plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
 # 3-sigma lines
-plt.axvline(flicker_rms*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {flicker_rms *1e3} mV")
-plt.axvline(-flicker_rms*1e3, color='b', linestyle='-.')
+plt.axvline(flicker_rms*1e3 + np.mean(flicker_noise), color='b', linestyle='-.', label=f"$\sigma$ Flicker = {flicker_rms *1e3} mV")
+plt.axvline(-flicker_rms*1e3 + np.mean(flicker_noise), color='b', linestyle='-.')
 
 plt.axvline(white_rms*1e3, color='r', linestyle='-.', label=f"$\sigma$ White = {white_rms *1e3} mV")
 plt.axvline(-white_rms*1e3, color='r', linestyle='-.')
@@ -84,8 +126,8 @@ plt.axvline(resolution*1e3, color='k', linestyle='--', label="Resolution")
 plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
 # 3-sigma lines
-plt.axvline(flicker_rms*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {flicker_rms *1e3} mV")
-plt.axvline(-flicker_rms*1e3, color='b', linestyle='-.')
+plt.axvline(flicker_rms*1e3 + np.mean(flicker_noise), color='b', linestyle='-.', label=f"$\sigma$ Flicker = {flicker_rms *1e3} mV")
+plt.axvline(-flicker_rms*1e3 + np.mean(flicker_noise), color='b', linestyle='-.')
 
 
 plt.xlabel("Noise value [mV]")
@@ -112,5 +154,5 @@ plt.xlabel("Noise value [ps]")
 plt.ylabel("Counts")
 plt.title("Noise distributions vs system resolution")
 plt.legend()
-save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta t = {resolution_t*2e12}$ ps", SAVE_DIR)
+save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*2e12}$ ps", SAVE_DIR)
 plt.show()

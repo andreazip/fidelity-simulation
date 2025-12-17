@@ -21,6 +21,7 @@ def save_figure(title, folder="figures", ext="png"):
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results"
 
 
+
 PPT_STYLE = {
     "font.size": 20,
     "axes.titlesize": 24,
