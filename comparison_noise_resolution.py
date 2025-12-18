@@ -39,16 +39,24 @@ plt.rcParams.update(PPT_STYLE)
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
 
 # Noise generator with arbitrary PSD
-def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
+def noise_psd(T, fs=500e6, f_cutoff = None, psd_func=lambda f, f_cutoff: 1):
+        if f_cutoff == None:
+            f_cutoff = fs/2
+        
         N = int(T * fs)
+
+        # Make it odd
+        if N % 2 == 0:
+            N += 1   # add 1 if even
+    
         N = N + 1
         freqs = np.fft.rfftfreq(N,1/fs)
         #should understand if needed
-        freqs =np.where(freqs==0, 1/T, freqs )
+        freqs = freqs[1:]
+        
+        X_white = np.fft.rfft(np.random.randn(N-1))
 
-        X_white = np.fft.rfft(np.random.randn(N))
-
-        S = np.sqrt(psd_func(freqs))
+        S = np.sqrt(psd_func(freqs, f_cutoff))
         S = S/np.sqrt(np.mean(S**2))
         X_shaped = X_white * S
 
@@ -57,37 +65,82 @@ def noise_psd(T, fs=1e6, psd_func=lambda f: 1):
         x = np.fft.irfft(X_shaped, n=N)
 
         # Normalize to unit RMS ---
-        x_rms = x/np.sqrt(np.mean(x**2))
+        x_rms = x/np.std(x)
 
         return x_rms, S**2
 
 # PSD functions
-def white_psd(f):
-    return np.ones_like(f)
+def white_psd(f, f_cutoff):
+    S = np.ones_like(f)
+    S[f >f_cutoff] = 0
+    return S
 
-def pink_psd(f):
-   return 1/np.where(f == 0, float('inf'), f)
+def pink_psd(f, f_cutoff):
+    S = 1/f
+    S[f > f_cutoff] = 0  # zero above cutoff → lowpass
+    return S
 
 alpha = 50
 Joffset = 10e3
 V0 = 184e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
-t_max = 10e-9
-N = 10000
-fs = int(N/ t_max)
 
-x_white, S_white = noise_psd(t_max, fs,  psd_func=lambda f: white_psd(f))
-x_pink, S_pink = noise_psd(t_max, fs,  psd_func=lambda f: pink_psd(f))
+fs = f_cutoff = 5e10
+N = 1000
+t_max = N/5e10
 
-flicker_rms = 0.1e-3
-white_rms = 0.4e-3
+x_white, S_white = noise_psd(t_max, fs, f_cutoff, psd_func=lambda f, f_cutoff: white_psd(f, f_cutoff))
+x_pink, S_pink = noise_psd(t_max, fs, f_cutoff,  psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
+
+flicker_rms = 0.2e-3
+white_rms = 0.5e-3
 jitter_rms = 10e-12
 
-white_noise = white_rms * x_white *1e3
-flicker_noise = flicker_rms * x_pink *1e3
+white_noise = white_rms * x_white 
+flicker_noise = flicker_rms * x_pink 
+
+ehite_noise = white_noise*1e3
+flicker_noise = flicker_noise*1e3
+# FFT and PSD
+N = len(x_white) + 1
+f = np.fft.rfftfreq(N, 1/fs)
+f = f[1:]
+ 
+
+X_white = np.fft.rfft(x_white)
+S_white = 2/(N*fs) * np.abs(X_white)**2
+    
+
+X_pink = np.fft.rfft(x_pink)
+S_pink = 2/(N*fs) * np.abs(X_pink)**2
+    
+
+# Plot PSD
+plt.figure(figsize=(6,4))
+plt.loglog(f, S_white*1e6, color='blue')
+plt.loglog(f, S_pink*1e6, color='red')
+plt.xlabel("Frequency [Hz]")
+plt.ylabel("PSD $[mV^2/Hz]$")
+plt.title(f"Power Spectral Density (fs={fs:.0e} Hz)")
+plt.legend(['White','Pink'])
+plt.grid(True)
 
 
+# Total power & RMS
+df = f[1]-f[0]
+P_white = np.sum(S_white) * df
+P_pink = np.sum(S_pink) * df 
+
+rms_white = np.std(x_white)
+rms_pink = np.std(x_pink)
+
+mean_white = np.mean(x_white)
+mean_pink = np.mean(x_pink)
+
+print(f"fs = {fs:.0e} Hz")
+print("White noise: Power =", P_white, "RMS =", rms_white, "Mean =", mean_white)
+print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink)
 # Generate noise realizations
 
 jitter_noise  = np.random.normal(0, jitter_rms, N) *1e12
@@ -98,7 +151,7 @@ plt.hist(flicker_noise, bins=50, alpha=0.6, label="Flicker noise")
 plt.hist(white_noise, bins=50, alpha=0.3, label="White noise")
 
 # Overlay system resolution
-resolution = 0.085e-3/2
+resolution = 0.085e-3
 plt.axvline(resolution*1e3, color='k', linestyle='--', label="Resolution")
 plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
@@ -121,7 +174,7 @@ plt.figure(figsize=(16,9))
 plt.hist(flicker_noise, bins=50, alpha=0.6, label="Flicker noise")
 
 # Overlay system resolution
-resolution = 0.085e-3/2
+resolution = 0.085e-3
 plt.axvline(resolution*1e3, color='k', linestyle='--', label="Resolution")
 plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
@@ -143,7 +196,7 @@ plt.figure(figsize=(16,9))
 plt.hist(jitter_noise, bins=50, alpha=0.6, label="Jitter noise")
 
 # Overlay system resolution
-resolution_t = 13e-12/2
+resolution_t = 13e-12
 plt.axvline(resolution_t*1e12, color='k', linestyle='--', label="Resolution")
 plt.axvline(-resolution_t*1e12, color='k', linestyle='--')
 

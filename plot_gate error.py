@@ -100,7 +100,7 @@ def plot_delta_V(theta=None, scale_factor=2500, show_grid=True):
     # Δt_gate plot (left subplot)
  # ----------------------------------------
 
-def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 770, 942], scale_delta_V = [2500, 25000/7, 12500/3, 5000, 312500/51, 7496]):
+def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 770, 942], scale_delta_V = [50, 500/7, 250/3, 100, 6250/51, 3748/25]):
     # Define oscillation frequencies and theta values
     if theta is None:
         theta = np.linspace(0.1, np.pi, 200)  # rad
@@ -115,7 +115,7 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     # ----------------------------------------
     # Δt_gate plot (left subplot)
     # ----------------------------------------
-
+    alpha = 25
     plt.subplot(1, 2, 1)
     time_resolution =[]
     for i in range(len(labels)):
@@ -135,8 +135,8 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     plt.subplot(1, 2, 2)
     voltage_resolution =[]
     for i in range(len(labels)):
-        delta_V = 1 / (scale_delta_V[i] * theta)  # V
-        voltage_resolution.append(1 / (scale_delta_V[i] * (np.pi-np.arctan(np.sqrt(8)))) ) #compute felta_V for worst case
+        delta_V = 1 / (scale_delta_V[i] * theta)/alpha  # V
+        voltage_resolution.append(1 / (scale_delta_V[i] * (np.pi-np.arctan(np.sqrt(8)))*alpha) ) #compute felta_V for worst case
         plt.semilogy(theta, delta_V * 1e6, linestyle='-', label=labels[i])  # µV
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$\Delta V$ [$\mu V$]')

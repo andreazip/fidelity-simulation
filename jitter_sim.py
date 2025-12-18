@@ -63,7 +63,7 @@ plt.figure(figsize=(16,9))
 plt.plot(list_jitter*1e12, delta_theta, label=r'$\Delta \theta$ vs jitter')
 plt.fill_between(list_jitter*1e12, (delta_theta - 3*delta_std), (delta_theta + 3*delta_std),
                      color='orange', alpha=0.3, label="±3 std")
-plt.axhline(4.08e-3, color='r', linestyle='--', label='Threshold 4.08e-3')
+plt.axhline(2*4.08e-3, color='r', linestyle='--', label='Threshold 8.2e-3')
 plt.xlabel('Timing $\sigma_{Jitter_{RMS}}$  (ps)')
 plt.ylabel(r'$\Delta \theta$')
 plt.title('Effect of timing jitter on theta')
