@@ -286,13 +286,15 @@ def run_exchange_qubit_simulation(
         t_total = t2 + 2*t1
 
     # Pulse timing
-    t_start1, t_end1 = 0, t1 
-    t_start2, t_end2 = t1, t1+t2 
-    t_start3, t_end3 = t1+t2, 2*t1+t2 
+    t_start1, t_end1 = 1e-9, t1 + 1e-9
+    t_start2, t_end2 = t1 + 1e-9, t1+t2+1e-9
+    t_start3, t_end3 = t1+t2+1e-9, t_total + 1e-9
 
-    T = t_total + 2e-9
-    N = 200
-    tlist = np.linspace(-1e-9, T, N)
+    # T = t_total + 2e-9
+
+    T = 16e-9
+    N = 400
+    tlist = np.linspace(0, T, N)
     #calculate ideal operation
 
     # Parameter list passed into pulse generator
@@ -465,7 +467,6 @@ def run_exchange_qubit_simulation(
 def noise_psd(T, N, psd_func=lambda f: 1):
     # Number of samples
     fs = N/T
-   
     # Frequency vector (one-sided, skip DC)
     freqs = np.fft.rfftfreq(N, d=1/fs)
     freqs = freqs[1:]  # skip DC
@@ -781,22 +782,23 @@ def simulate_infidelity_jitter(pulse_types=['square','linear','RC'],
     print(f"Simulation completed. Results saved to '{output_file}'")
 
 # calibration step
+# pulse_types=['square','linear','RC']
 # for pulse_type in pulse_types:
-#     fidelity, fidelity_pulse, f_QPT = run_exchange_qubit_simulation(
+#     fidelity, fidelity_pulse, f_QPT, _, _ = run_exchange_qubit_simulation(
 #         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
 #         deltaV=0,
 #         pulse_type=pulse_type,
 #         t_rise = 1e-9,
 #         t_fall = 1e-9,
-#         deltat=0.0,
+#         deltat=13e-12,
 #         tau = 0.1e-9, 
-#         plot_bloch=True,
+#         plot_bloch=False,
 #         plot_pulse=True,
 #         white_amp = 0,
 #         pink_amp = 0,
 #     )
-    # print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
-    # print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
+#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
+#     print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
 
    
 # # check deltaV

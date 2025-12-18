@@ -203,12 +203,14 @@ V0 = 184e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
 
-x_white_rms = 1.23e-3
-x_pink_rms = 0.2e-3
+x_white_rms = 0.8e-3
+x_pink_rms = 0.3e-3
 
-T = 400/5e10
-fs_list = [5e10]  # two sampling frequencies
-f_cutoff = 5e10
+N = 400
+fs_list = [25e9]  # two sampling frequencies
+f_cutoff = fs_list[0]
+
+T = N/fs_list[0]
 # -----------------------------
 # Generate noise for both fs
 # -----------------------------
@@ -261,8 +263,25 @@ for fs in fs_list:
     print("White noise: Power =", P_white, "RMS =", rms_white, "Mean =", mean_white)
     print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink)
 
-plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 100)
-plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 100)
+    N0 = P_white/(fs/2) #kT/C value
+
+    C_eq = 1.38e-23*100e-3/N0/fs/2
+
+
+    K_flicker = P_pink/np.log(f[-1]/f[0])
+
+    print(f"Noise floor white noise: {N0*1e6} V^2/Hz \n")
+    print(f"The capacitor that produce this thermal noise is about: {C_eq} F")
+
+    print(f"K flicker noise: {K_flicker*1e9} V^2 \n")
+    print(
+    f"S(f) = K/f with K = {K_flicker:.3e} V^2\n"
+    f"S(1 Hz) = {K_flicker:.3e} V^2/Hz\n"
+    f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker):.3e} V/sqrt(Hz)\n"
+)
+
+# plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 100)
+# plot_delta_theta(0, 0.002, white = True, flicker = False, N = 200, iterations = 100)
 
 plt.show()
 
