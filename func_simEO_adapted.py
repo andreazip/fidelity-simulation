@@ -13,21 +13,24 @@ import func_simEO as EO
 from func_simEO import run_exchange_qubit_simulation, fidelity_QPT
 import plot as plot
 
-alpha_list = [50, 25]
+#alpha_list = [50, 25] #this is 2 alpha
+alpha_list = [25]
 Joffset_list = [100e3, 10e3]
 
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
 
 for alpha in alpha_list:
     if alpha == 25:
-           pink_amps=np.linspace(0, 0.0004, 10)
+           pink_amps=np.linspace(0, 0.0006, 10)
+           white_amps = np.linspace(0, 0.002, 10)
     else:
            pink_amps=np.linspace(0, 0.0002, 10)
+           white_amps = np.linspace(0, 0.001, 10)
     for Joffset in Joffset_list:
         V = np.log(100e6/Joffset)/alpha
         EO.simulate_infidelity_jitter(V=V,alpha=alpha, J_offset = Joffset, iterations= 20, output_file=f"Infidelity_jitter_results_alpha={alpha}_Joff={Joffset}.npz")
         plot.plot_infidelity_vs_jitter(alpha, Joffset, f"Infidelity_jitter_results_alpha={alpha}_Joff={Joffset}.npz",SAVE_DIR= SAVE_DIR, floor_value=1e-7 )
-        EO.simulate_infidelity_vs_noise(V=V, alpha=alpha, J_offset = Joffset, pink_amps = pink_amps, iterations= 20, output_file=f"Infidelity_results_alpha={alpha}_Joff={Joffset}.npz")
+        EO.simulate_infidelity_vs_noise(V=V, alpha=alpha, J_offset = Joffset, pink_amps = pink_amps, white_amps=white_amps, iterations= 20, output_file=f"Infidelity_results_alpha={alpha}_Joff={Joffset}.npz")
         plot.plot_infidelity_vs_noise(alpha, Joffset, f"Infidelity_results_alpha={alpha}_Joff={Joffset}.npz",SAVE_DIR= SAVE_DIR, floor_value=1e-7 )
 
 

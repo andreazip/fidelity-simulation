@@ -93,15 +93,16 @@ t_max = N/5e10
 x_white, S_white = noise_psd(t_max, fs, f_cutoff, psd_func=lambda f, f_cutoff: white_psd(f, f_cutoff))
 x_pink, S_pink = noise_psd(t_max, fs, f_cutoff,  psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
 
-flicker_rms = 0.2e-3
-white_rms = 0.5e-3
-jitter_rms = 10e-12
+flicker_rms = 0.15e-3
+white_rms = 0.6e-3
+jitter_rms = 17.5e-12
 
 white_noise = white_rms * x_white 
 flicker_noise = flicker_rms * x_pink 
 
-ehite_noise = white_noise*1e3
+white_noise = white_noise*1e3
 flicker_noise = flicker_noise*1e3
+
 # FFT and PSD
 N = len(x_white) + 1
 f = np.fft.rfftfreq(N, 1/fs)
@@ -166,7 +167,7 @@ plt.xlabel("Noise value [mV]")
 plt.ylabel("Counts")
 plt.title("Noise distributions vs system resolution")
 plt.legend()
-save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*2*1e3}$ mV", SAVE_DIR)
+save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3}$ mV", SAVE_DIR)
 plt.show()
 
 # Plot histogram / distribution
@@ -187,7 +188,7 @@ plt.xlabel("Noise value [mV]")
 plt.ylabel("Counts")
 plt.title("Noise distributions vs system resolution")
 plt.legend()
-save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*2e3}$ mV", SAVE_DIR)
+save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3}$ mV", SAVE_DIR)
 plt.show()
 
 
@@ -207,5 +208,5 @@ plt.xlabel("Noise value [ps]")
 plt.ylabel("Counts")
 plt.title("Noise distributions vs system resolution")
 plt.legend()
-save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*2e12}$ ps", SAVE_DIR)
+save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12}$ ps", SAVE_DIR)
 plt.show()

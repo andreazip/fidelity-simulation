@@ -203,8 +203,8 @@ V0 = 184e-3
 J0 = np.exp(alpha*(V0)) * Joffset * 2*np.pi
 theta = np.arctan(np.sqrt(8))
 
-x_white_rms = 0.8e-3
-x_pink_rms = 0.3e-3
+x_white_rms = 0.6e-3
+x_pink_rms = 0.15e-3
 
 N = 400
 fs_list = [25e9]  # two sampling frequencies
@@ -218,7 +218,8 @@ for fs in fs_list:
     # Generate noise
     x_white, S_white = noise_psd(T, fs, f_cutoff, psd_func=lambda f, f_cutoff: white_psd(f, f_cutoff))
     x_pink, S_pink = noise_psd(T, fs, f_cutoff, psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
-
+    # x_pink2, S_pink2 = noise_psd(T, fs, f_cutoff, psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
+    # x_pink = x_pink + x_pink2[-1]
     # RMS normalization
     x_white = x_white_rms * x_white
     x_pink = x_pink_rms * x_pink
@@ -234,13 +235,13 @@ for fs in fs_list:
     
 
     X_pink = np.fft.rfft(x_pink)
-    S_pink = 2/(N*fs) * np.abs(X_pink)**2
+    S_pink = 2/(N*fs) * np.abs(X_pink)**2 #single sideband definition
     
 
     # Plot PSD
     plt.figure(figsize=(6,4))
-    plt.loglog(f, S_white*1e6, color='blue')
-    plt.loglog(f, S_pink*1e6, color='red')
+    plt.loglog(f, S_white, color='blue')
+    plt.loglog(f, S_pink, color='red')
     plt.xlabel("Frequency [Hz]")
     plt.ylabel("PSD $[mV^2/Hz]$")
     plt.title(f"Power Spectral Density (fs={fs:.0e} Hz)")
@@ -261,23 +262,23 @@ for fs in fs_list:
 
     print(f"fs = {fs:.0e} Hz")
     print("White noise: Power =", P_white, "RMS =", rms_white, "Mean =", mean_white)
-    print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink)
+    print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink, " \n")
 
     N0 = P_white/(fs/2) #kT/C value
 
-    C_eq = 1.38e-23*100e-3/N0/fs/2
+    C_eq = 1.38e-23*100e-3/P_white
 
 
     K_flicker = P_pink/np.log(f[-1]/f[0])
 
-    print(f"Noise floor white noise: {N0*1e6} V^2/Hz \n")
-    print(f"The capacitor that produce this thermal noise is about: {C_eq} F")
+    print(f"Noise floor white noise: {N0*1e6} uV^2/Hz")
+    print(f"The capacitor that produce this thermal noise is about: {C_eq} F \n")
 
-    print(f"K flicker noise: {K_flicker*1e9} V^2 \n")
+    print(f"K flicker noise: {K_flicker*1e9} nV^2")
     print(
-    f"S(f) = K/f with K = {K_flicker:.3e} V^2\n"
-    f"S(1 Hz) = {K_flicker:.3e} V^2/Hz\n"
-    f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker):.3e} V/sqrt(Hz)\n"
+    f"S(f) = K/f with K = {K_flicker*1e9:.3e} nV^2\n"
+    f"S(1 Hz) = {K_flicker*1e9:.3e} nV^2/Hz\n"
+    f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker)*1e6:.3e} uV/sqrt(Hz)\n"
 )
 
 # plot_delta_theta(0, 0.0002, white = False, flicker = True, N = 200, iterations= 100)
