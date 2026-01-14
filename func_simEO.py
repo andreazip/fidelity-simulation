@@ -321,7 +321,7 @@ def run_exchange_qubit_simulation(
         # J23 pulses (first and last pulse)
         J23_params = [
             # First pulse rise
-            (t_start1, t_end1 + deltat/2, V2, tau),
+            (t_start1, t_end1, V2, tau),
             # Second pulse rise
             (t_start3, t_end3, V2, tau),
         ]
@@ -339,7 +339,6 @@ def run_exchange_qubit_simulation(
    
     result = sesolve(H, psi0, tlist)
 
-    # Calculate the operator with and w/o rotating frame approx.
     # qt.propagator returns list of U for each time step
     U_ideal = qt.propagator(H,tlist)
 
@@ -782,23 +781,23 @@ def simulate_infidelity_jitter(pulse_types=['square','linear','RC'],
     print(f"Simulation completed. Results saved to '{output_file}'")
 
 # calibration step
-# pulse_types=['square','linear','RC']
-# for pulse_type in pulse_types:
-#     fidelity, fidelity_pulse, f_QPT, _, _ = run_exchange_qubit_simulation(
-#         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#         deltaV=0,
-#         pulse_type=pulse_type,
-#         t_rise = 1e-9,
-#         t_fall = 1e-9,
-#         deltat=13e-12,
-#         tau = 0.1e-9, 
-#         plot_bloch=False,
-#         plot_pulse=True,
-#         white_amp = 0,
-#         pink_amp = 0,
-#     )
-#     print(f"Final fidelity {pulse_type}: {fidelity*100:.5f} % , pulse: {fidelity_pulse*100:.5f} %")
-#     print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
+pulse_types=['square','linear','RC']
+for pulse_type in pulse_types:
+    fidelity, fidelity_pulse, f_QPT, _, _ = run_exchange_qubit_simulation(
+        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
+        deltaV=0.085e-3,
+        pulse_type=pulse_type,
+        t_rise = 1e-9,
+        t_fall = 1e-9,
+        deltat=0,
+        tau = 0.1e-9, 
+        plot_bloch=False,
+        plot_pulse=True,
+        white_amp = 0,
+        pink_amp = 0,
+    )
+    print(f"State fidelity {pulse_type}: {fidelity*100:.5f} % , operator fidelity: {fidelity_pulse*100:.5f} %")
+    # print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
 
    
 # # check deltaV

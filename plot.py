@@ -102,7 +102,7 @@ def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_valu
                 delta = np.array(std_dicts[std_key][pulse])
                 plt.plot(amps*1e3, y, label=f"{pulse} ({label_suffix})", color=colors[pulse], marker=marker, linestyle=linestyle)
                 plt.fill_between(amps*1e3, y, y+3*delta, color='orange', alpha=0.1)
-        title = f"Infidelity vs Noise Amplitude RMS - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
+        title = f"Infidelity vs Noise Amplitude RMS - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
         plt.xlabel("Noise Amplitude [mV RMS]")
         plt.ylabel("Infidelity (1 - Fidelity)")
@@ -162,7 +162,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_val
             plt.plot(sigma_jitters*1e12, y, label=f"{pulse}", color=colors[pulse], marker='o')
             plt.fill_between(sigma_jitters*1e12, y, y + 3*delta, color='orange', alpha=0.1)
 
-        title = f"Infidelity vs Jitter - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
+        title = f"Infidelity vs Jitter - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
         plt.xlabel("RMS Timing Jitter σ [ps]")
         plt.ylabel("Infidelity (1 - Fidelity)")
