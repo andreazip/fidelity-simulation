@@ -3,139 +3,194 @@ import matplotlib.pyplot as plt
 import re
 from pathlib import Path
 
-def auto_plot(filename, base_dir="results_cadence"):
-    """
-    Auto-detect CSV format and plot:
-    1) Delay vs digital code (DTC)
-    2) Delay vs VDD
-    3) Power vs capacitance
+# --- Global Style Configuration ---
+PPT_STYLE = {
+    "font.size": 14,
+    "axes.titlesize": 18,
+    "axes.labelsize": 14,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 10,
+    "figure.figsize": (12, 7),
+    "lines.linewidth": 2.5,
+    "grid.alpha": 0.5,
+    "grid.linestyle": "--"
+}
+plt.rcParams.update(PPT_STYLE)
 
-    filename can be:
-    - "results_delay.csv"
-    - "results_cadence/results_delay.csv"
-    """
-    path = Path(filename)
-    if not path.exists():
-        path = Path(base_dir) / filename
-    
-    df = pd.read_csv(path)
-    df.columns = df.columns.str.strip()
-    cols = df.columns
+class CadencePlotter:
+    def __init__(self, base_dir="results_cadence"):
+        self.base_dir = Path(base_dir)
 
-    name = path.stem
+    def _resolve_path(self, filename):
+        """Finds the file in the local dir or the base_dir."""
+        path = Path(filename)
+        if not path.exists():
+            path = self.base_dir / filename
+        return path
 
-    # ============================================================
-    # FORMAT 1: DTC delay vs digital code (b2 + delay b0/b1)
-    # ============================================================
-    if "b2" in cols and any(c.startswith("delay") for c in cols):
-        data = []
+    def load_data(self, filename):
+        path = self._resolve_path(filename)
+        if not path.exists():
+            return None, path
+        df = pd.read_csv(path)
+        df.columns = df.columns.str.strip()
+        return df, path
 
-        for _, row in df.iterrows():
-            b2 = int(row["b2"])
-            for col in cols:
-                m = re.search(r"b0\s*(\d)\s*b1\s*(\d)", col)
-                if not m:
-                    continue
-                b0, b1 = int(m.group(1)), int(m.group(2))
-                code = b2 * 4 + b1 * 2 + b0
-                data.append((code, row[col]))
-
-        plot_df = (
-            pd.DataFrame(data, columns=["code", "delay"])
-            .sort_values("code")
-            .reset_index(drop=True)
-        )
-
-        plt.figure()
-        plt.plot(plot_df["code"], plot_df["delay"], marker="o")
-        plt.xlabel("Digital code")
-        plt.ylabel("Delay [s]")
-        plt.title(name)
-        plt.grid(True)
-        plt.show()
-
-        return plot_df
-
-    # ============================================================
-    # FORMAT 2 & 3: generic X–Y tables (delay vs VDD, power vs C)
-    # ============================================================
-    x_cols = [c for c in cols if c.endswith("X")]
-    y_cols = [c for c in cols if c.endswith("Y")]
-
-    if len(x_cols) == 1 and len(y_cols) == 1:
-        x, y = x_cols[0], y_cols[0]
-
-        plt.figure()
-        plt.plot(df[x], df[y], marker="o")
-        plt.xlabel(x)
-        plt.ylabel(y)
-        plt.title(name)
-        plt.grid(True)
-        plt.show()
-
-        return df[[x, y]]
-
-    # ============================================================
-    # Unknown format
-    # ============================================================
-    raise ValueError("Unknown CSV format – cannot auto-plot.")
-
-
-
-def plot_csv_signals(filename,base_dir="results_cadence"):
-    """
-    Reads a CSV file with paired X and Y columns for different signals and plots them.
-    """
-    path = Path(filename)
-    if not path.exists():
-        path = Path(base_dir) / filename
-    # Load the data
-    df = pd.read_csv(path)
-    
-    # Identify signal groups by finding all columns ending in ' X'
-    x_cols = [col for col in df.columns if col.endswith(' X')]
-    
-    plt.figure(figsize=(12, 7))
-    
-    for x_col in x_cols:
-        # Construct the corresponding Y column name
-        y_col = x_col[:-2] + ' Y' 
+    def plot_signals(self, filename):
+        """Format: Multiple X-Y pairs (e.g., Transient waveforms)."""
+        df, path = self.load_data(filename)
+        if df is None: return
         
-        if y_col in df.columns:
-            # Convert columns to numeric, coercing strings/spaces to NaN
-            x_data = pd.to_numeric(df[x_col], errors='coerce')
-            y_data = pd.to_numeric(df[y_col], errors='coerce')
+        x_cols = [c for c in df.columns if c.endswith(' X')]
+        plt.figure()
+        for x_col in x_cols:
+            y_col = x_col[:-2] + ' Y'
+            if y_col in df.columns:
+                x_vals = pd.to_numeric(df[x_col], errors='coerce')
+                y_vals = pd.to_numeric(df[y_col], errors='coerce')
+                mask = x_vals.notna() & y_vals.notna()
+                plt.plot(x_vals[mask], y_vals[mask], label=x_col[:-2].lstrip('/'))
+        
+        plt.xlabel("X-axis")
+        plt.ylabel("Y-axis")
+        plt.title(f"Waveforms: {path.name}")
+        if len(x_cols) > 1:
+            plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"plots/signals_{path.stem}.png")
+
+    def plot_generic_sweep(self, filename):
+        """Format: Single X and Y pair (e.g., Delay vs VDD)."""
+        df, path = self.load_data(filename)
+        if df is None: return
+        
+        x_cols = [c for c in df.columns if c.endswith(' X')]
+        y_cols = [c for c in df.columns if c.endswith(' Y')]
+        if not x_cols or not y_cols: return
+        
+        x, y = x_cols[0], y_cols[0]
+        plt.figure()
+        plt.plot(df[x], df[y], marker='o', color='dodgerblue')
+        plt.xlabel(x.replace(' X', ''))
+        plt.ylabel(y.replace(' Y', ''))
+        plt.title(f"Sweep: {path.stem}")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"plots/generic_{path.stem}.png")
+
+    def plot_digital_sweep(self, filename, y_label="Value"):
+        """Format: Reconstructs b2b1b0 digital code."""
+        df, path = self.load_data(filename)
+        if df is None: return
+        
+        data = []
+        bit_pattern = re.compile(r"b0[^\d]*(\d)[^\d]*b1[^\d]*(\d)")
+        for x_col in [c for c in df.columns if c.endswith(' X')]:
+            y_col = x_col[:-2] + ' Y'
+            m = bit_pattern.search(x_col)
+            if m and y_col in df.columns:
+                b0, b1 = int(m.group(1)), int(m.group(2))
+                for _, row in df.iterrows():
+                    try:
+                        b2 = int(float(row[x_col]))
+                        data.append({'c': (b2<<2)|(b1<<1)|b0, 'l': f"{b2}{b1}{b0}", 'y': row[y_col]})
+                    except: continue
+
+        if not data: return
+        plot_df = pd.DataFrame(data).sort_values('c')
+        plt.figure()
+        plt.plot(plot_df['l'], plot_df['y'], marker='o', color='crimson')
+        plt.xlabel("Digital Code ($b_2 b_1 b_0$)")
+        plt.ylabel(y_label)
+        plt.title(f"Digital Sweep: {path.name}")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(f"plots/digital_{path.stem}.png")
+
+    def plot_histogram(self, filename):
+        """Plots a histogram for Monte Carlo data with Mean and Std Dev."""
+        df, path = self.load_data(filename)
+        if df is None: return
+        
+        data = pd.to_numeric(df.iloc[:, 0], errors='coerce').dropna()
+        plt.figure()
+        plt.hist(data, bins=30, color='skyblue', edgecolor='black', alpha=0.7)
+        
+        mean, std = data.mean(), data.std()
+        plt.axvline(mean, color='red', linestyle='-', linewidth=2, label=f'Mean ($\mu$): {mean:.3e}')
+        plt.axvline(mean + std, color='orange', linestyle='--', linewidth=1.5, label=f'Std Dev ($\sigma$): {std:.3e}')
+        plt.axvline(mean - std, color='orange', linestyle='--', linewidth=1.5)
+        plt.axvspan(mean - std, mean + std, color='orange', alpha=0.1, label='1-$\sigma$ Spread')
+        
+        plt.title(f"Monte Carlo: {path.name}\n($\mu$={mean:.3e}, $\sigma$={std:.3e})")
+        plt.xlabel(df.columns[0].replace(' X', ''))
+        plt.ylabel("Frequency")
+        plt.legend(); plt.grid(True); plt.tight_layout()
+        plt.savefig(f"plots/mc_hist_{path.stem}.png")
+
+    def plot_corner_temperature_sweep(self, filename):
+        """Plots metric vs temperature for different PVT corners."""
+        df, path = self.load_data(filename)
+        if df is None: return
+        
+        x_cols = [c for c in df.columns if c.endswith(' X')]
+        plt.figure()
+        corner_pattern = re.compile(r"top_(\w+)")
+        
+        for x_col in x_cols:
+            y_col = x_col[:-2] + ' Y'
+            if y_col in df.columns:
+                match = corner_pattern.search(x_col)
+                label = match.group(1).upper() if match else x_col
+                plt.plot(df[x_col], df[y_col], marker='o', label=label)
+        
+        plt.xlabel("Temperature [$^{\circ}$C]")
+        plt.ylabel(path.stem.split('_')[0].capitalize())
+        plt.title(f"Corner Sweep: {path.name}")
+        plt.legend(title="Corners"); plt.grid(True); plt.tight_layout()
+        plt.savefig(f"plots/corner_sweep_{path.stem}.png")
+
+    def smart_plot(self, filename):
+        """Automatically detects format and plots accordingly."""
+        df, path = self.load_data(filename)
+        if df is None: return
             
-            # Remove NaN values to ensure a clean plot
-            mask = x_data.notna() & y_data.notna()
-            x_plot = x_data[mask]
-            y_plot = y_data[mask]
-            
-            # Create a label by removing the leading slash and ' X' suffix
-            label = x_col[:-2].lstrip('/')
-            
-            plt.plot(x_plot, y_plot, label=label)
-            
-    plt.xlabel('Time / X-units')
-    plt.ylabel('Voltage / Y-units')
-    plt.title(f'Signal Analysis: {Path(filename).name}')
-    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
-    plt.grid(True, linestyle='--', alpha=0.7)
-    plt.tight_layout()
-    
-    output_filename = 'signals_plot.png'
-    plt.savefig(output_filename)
-    return output_filename
+        name_lower = filename.lower()
+        if "mc" in name_lower:
+            return self.plot_histogram(filename)
+        if "corner_t" in name_lower:
+            return self.plot_corner_temperature_sweep(filename)
+        if any(re.search(r"b0.*b1", c) for c in df.columns):
+            return self.plot_digital_sweep(filename)
+        
+        x_cols = [c for c in df.columns if c.endswith(' X')]
+        if len(x_cols) == 1:
+            return self.plot_generic_sweep(filename)
+        if len(x_cols) > 1:
+            return self.plot_signals(filename)
 
-# Usage
-plot_csv_signals('plot_signals.csv')
+# --- Usage ---
+plotter = CadencePlotter(base_dir="results_cadence")
 
-auto_plot("delay_vs_vdd.csv")
-auto_plot("delay_vs_C.csv")
-auto_plot("delay_vs_inverter_strength.csv")
+# 1. Automatic Plots for all provided files
+files = [
+    "delay_vs_code.csv", 
+    "power_vs_code.csv", 
+    "delay_vs_vdd.csv", 
+    "delay_vs_C.csv", 
+    "power_vs_C.csv", 
+    "power_vs_vdd.csv", 
+    "plot_signals.csv",
+    "delay_vs_corner_T.csv",
+    "Power_vs_corner_T.csv",
+    "power_mc_tt.csv",
+    "delay_mc_tt.csv"
+]
 
-auto_plot("power_vs_C.csv")
-auto_plot("power_vs_ivdd.csv")
-auto_plot("power_vs_inverter_strength.csv")
+for f in files:
+    plotter.smart_plot(f)
 
-
+# 2. Specific Signal Plots
+plotter.plot_signals("plot_signals_code.csv")
