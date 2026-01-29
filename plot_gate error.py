@@ -120,7 +120,7 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     time_resolution =[]
     for i in range(len(labels)):
         delta_t = 1 / (f_osc * 1e6 * scale_delta_t[i])  # seconds
-        time_resolution.append(1 / (100* 1e6 * scale_delta_t[i])) # compute at 100 MHz
+        time_resolution.append(1 / (20* 1e6 * scale_delta_t[i])) # compute at 20 MHz
         plt.loglog(f_osc, delta_t * 1e12, linestyle='-', label=labels[i])  # ns
     plt.xlabel('J [MHz]')
     plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ps]')
@@ -135,8 +135,8 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     plt.subplot(1, 2, 2)
     voltage_resolution =[]
     for i in range(len(labels)):
-        delta_V = 1 / (scale_delta_V[i] * theta)/alpha  # V
-        voltage_resolution.append(1 / (scale_delta_V[i] * (np.pi-np.arctan(np.sqrt(8)))*alpha) ) #compute felta_V for worst case
+        delta_V = 1 / (scale_delta_V[i] * theta)/2/alpha  # V
+        voltage_resolution.append(1 / (scale_delta_V[i] * (np.pi-np.arctan(8))*2*alpha) ) #compute delta_V for worst case
         plt.semilogy(theta, delta_V * 1e6, linestyle='-', label=labels[i])  # µV
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$\Delta V$ [$\mu V$]')

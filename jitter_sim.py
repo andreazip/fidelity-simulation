@@ -31,15 +31,18 @@ PPT_STYLE = {
 
 plt.rcParams.update(PPT_STYLE)
 
-SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
 
-def jitter_vs_delta_theta(alpha=50, Joffset=10e3, V0=184e-3, 
-                          N=100, min_jitter=0, max_jitter=10e-12,
+def jitter_vs_delta_theta(alpha=25, Joffset=10e3, V0=152e-3, 
+                          N=100, min_jitter=0, max_jitter=100e-12,
                           realizations=1000):
     """
     Simulate the effect of timing jitter on theta and return delta_theta.
     """
-    J0 = np.exp(alpha * V0) * Joffset * 2 * np.pi
+    J0 = np.exp(2*alpha * V0) * Joffset * 2 * np.pi
+    SAVE_DIR = Path(
+            f"C:/Users/zipar/OneDrive - Delft University of Technology/Second Year/MEP/Images_results/Results_{np.round(J0/1e6/np.pi/2,0)}MHz/Noise_jitter"
+        )# Create folder if it doesn't exist
+    SAVE_DIR.mkdir(parents=True, exist_ok=True)
     list_jitter = np.linspace(min_jitter, max_jitter, N)
     delta_theta = np.zeros(N)
     delta_std = np.zeros(N)
@@ -53,12 +56,12 @@ def jitter_vs_delta_theta(alpha=50, Joffset=10e3, V0=184e-3,
         delta_std[j] = J0*np.std(list_theta) 
         
 
-    return list_jitter, delta_theta, delta_std
+    return list_jitter, delta_theta, delta_std, SAVE_DIR
 
 # Run the simulation
-list_jitter, delta_theta, delta_std = jitter_vs_delta_theta()
+list_jitter, delta_theta, delta_std, SAVE_DIR = jitter_vs_delta_theta()
 
-# Plot
+
 plt.figure(figsize=(16,9))
 plt.plot(list_jitter*1e12, delta_theta, label=r'$\Delta \theta$ vs jitter')
 plt.fill_between(list_jitter*1e12, (delta_theta - 3*delta_std), (delta_theta + 3*delta_std),

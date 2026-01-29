@@ -10,8 +10,6 @@ from matplotlib.colors import LogNorm
 from pathlib import Path
 import re
 
-SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Pulses"
-SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Pulses_noisy"
 
 PPT_STYLE = {
     "font.size": 20,
@@ -126,7 +124,7 @@ def J (alpha, J0, V):
     Convert from V domain to J domain
     """
     #return the value in rad/s
-    return np.exp(alpha*V)*J0*2*np.pi 
+    return np.exp(2*alpha*V)*J0*2*np.pi 
 
 # Pulse factory
 def make_pulse_function(alpha, J_offset, pulse_type, pulse_params):
@@ -215,117 +213,275 @@ def I_total(t_end, V0, trise, tfall, Joff, alpha, tau, pulse_type = None):
 # ------------------------------
 
 def run_exchange_qubit_simulation(
-    J_offset, V1, V2, alpha,
-    deltaV=0.0,
+    J_offset, 
+    V1, 
+    V2, 
+    alpha,
+    deltaV= 0.0,
     pulse_type="square",
     t_rise = 0,
     t_fall = 0,
     deltat=0.0,
     tau = 0, 
+    theta1 = 0,
+    theta2 = np.pi - np.arctan(np.sqrt(8)),
+    theta3 = np.arctan(np.sqrt(8)),
+    theta4 = np.pi - np.arctan(np.sqrt(8)),
     plot_bloch=False,
     plot_pulse=False,
     plot_noise = False,
     white_amp = 0,
     pink_amp = 0,
-    sigma_jitter = 0
+    sigma_jitter = 0,
+    T = 50e-9,
+    N = 4000
 ):
+    
+    """
+    Simulate an exchange-coupled qubit under shaped pulses with optional noise and jitter.
+
+    Parameters
+    ----------
+    J_offset : float
+        Base exchange coupling strength (rad/s), scales the Hamiltonian amplitude.
+    V1 : float
+        Voltage controlling the J12 coupling (middle pulse).
+    V2 : float
+        Voltage controlling the J23 coupling (first and last pulses).
+    alpha : float
+        Nonlinear factor: J(V) = J_offset * exp(2*alpha*V).
+    deltaV : float, optional
+        Voltage offset for non-ideal pulses, default is 0.0.
+    pulse_type : str, optional
+        Pulse shape: "square", "linear", or "RC", default is "square".
+    t_rise : float, optional
+        Rise time for linear pulses (seconds), default 0.
+    t_fall : float, optional
+        Fall time for linear pulses (seconds), default 0.
+    deltat : float, optional
+        Small time shift for pulse edges (seconds), default 0.0.
+    tau : float, optional
+        RC time constant for RC pulses, default 0.
+    theta1, theta2, theta3, theta4 : float, optional
+        Rotation angles (radians) for the four pulses.
+    plot_bloch : bool, optional
+        If True, plot Bloch sphere trajectory.
+    plot_pulse : bool, optional
+        If True, plot pulse sequences (J12/J23 and voltage).
+    plot_noise : bool, optional
+        If True, plot generated noise functions (white and pink).
+    white_amp : float, optional
+        Amplitude of white noise applied to pulses.
+    pink_amp : float, optional
+        Amplitude of pink (1/f) noise applied to pulses.
+    sigma_jitter : float, optional
+        RMS of pulse timing jitter (seconds), applied independently to each pulse.
+    T : float, optional
+        Total simulation time (seconds), must exceed total pulse time plus margins.
+    N : int, optional
+        Number of time steps for the simulation, default 4000.
+
+    Returns
+    -------
+    f : float
+        State fidelity with respect to the target state.
+    f_pulse : float
+        Operator fidelity of the final pulse.
+    f_QPT : float
+        Fidelity via quantum process tomography.
+    S : Qobj
+        Superoperator of the final evolution.
+    U_ideal : Qobj
+        Ideal unitary of the full pulse sequence.
+    """
 
     sx, sy, sz = sigmax(), sigmay(), sigmaz()
 
-    #define states for state fidelity
-    psi0 = basis(2,1)
+    # define states for state fidelity
+    psi0 = basis(2,1) 
     psi_target = basis(2,0)
 
+    # psi0 = (basis(2,0) + basis(2,1)).unit()  # normalized
+    # # Target after Y gate (up to global phase)
+    # psi_target = (-basis(2,0) + basis(2,1)).unit()
+
     #compute ideal amplitude for the rotation to be applied to calculate the period
-    J12_amp_id = np.exp(alpha*(V1)) * J_offset * 2*np.pi #[rad/s]
-    J23_amp_id = np.exp(alpha*(V2)) * J_offset * 2*np.pi #[rad/s]
+    J12_amp_id = np.exp(2*alpha*(V1)) * J_offset * 2*np.pi #[rad/s]
+    J23_amp_id = np.exp(2*alpha*(V2)) * J_offset * 2*np.pi #[rad/s]
     
-    #define the two rotations angle from paper to compute the X gate
-    theta1 = np.pi - np.arctan(np.sqrt(8))
-    theta2 = np.arctan(np.sqrt(8))
-    
+    # Choose directory depending on noise
+    if white_amp == sigma_jitter == pink_amp == 0:
+        noise = False
+        SAVE_DIR = Path(
+            f"C:/Users/zipar/OneDrive - Delft University of Technology/Second Year/MEP/Images_results/Results_{np.round(J12_amp_id/1e6/2/np.pi,0)}MHz/J_off{J_offset/1e3} kHz_alpha {alpha}/Pulses"
+        )
+    else:
+        noise = True
+        SAVE_DIR = Path(
+            f"C:/Users/zipar/OneDrive - Delft University of Technology/Second Year/MEP/Images_results/Results_{np.round(J12_amp_id/1e6/2/np.pi,0)}MHz/J_off{J_offset/1e3} kHz_alpha {alpha}/Pulses_noisy"
+        )
+
+    # Create folder if it doesn't exist
+    SAVE_DIR.mkdir(parents=True, exist_ok=True)
+
+    t = np.zeros(4)
+    #define the 4 rottions differently, such that any arbitrary gate can be implemented
     if pulse_type == "square":
-        t1 = theta1/J12_amp_id
-        t2 = theta2/J23_amp_id 
-        t_total = t1 + t2 + t1
+        t[0] = theta1/J23_amp_id
+        t[1] = theta2/J12_amp_id 
+        t[2] = theta3/J23_amp_id
+        t[3] = theta4/J12_amp_id 
+        t_total = sum(t)
 
     elif pulse_type == "linear":
-        #compute objective function that we want to reduce to 0 in order to set the time for the integral
-        def objective1(tconst):
-            t_end = t_rise + tconst + t_fall #update integral time
-            return I_total(t_end, V1, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta1
+        t = np.zeros(4)
 
-        #find time such that we match rotation angle
-        t_const_1 = brentq(objective1, 0, 1)
+        def compute_time(theta):
+            # If no rotation is needed, no pulse at all
+            if theta == 0:
+                return 0.0
 
-        def objective2(tconst):
-            t_end = t_rise + tconst + t_fall #update integral time
-            return I_total(t_end, V2, t_rise, t_fall, J_offset, alpha, 0, pulse_type) - theta2
+            # Objective function for root finding
+            def objective(tconst):
+                t_end = t_rise + tconst + t_fall
+                return (
+                    I_total(
+                        t_end,
+                        V1,
+                        t_rise,
+                        t_fall,
+                        J_offset,
+                        alpha,
+                        0,
+                        pulse_type
+                    )
+                    - theta
+                )
 
-        t_const_2 = brentq(objective2, 0, 1)
-        t1 = t_rise + t_fall + t_const_1
-        t2 = t_rise + t_fall + t_const_2
-        t_total = t2 + 2*t1
+            # Solve for constant part and add rise/fall
+            t_const = brentq(objective, 0, 1)
+            return t_rise + t_const + t_fall
+
+        # Compute the four pulse durations
+        t[0] = compute_time(theta1)
+        t[1] = compute_time(theta2)
+        t[2] = compute_time(theta3)
+        t[3] = compute_time(theta4)
+
+        # Total time
+        t_total = np.sum(t)
 
     elif pulse_type == "RC":
-        def objective1(tconst):
-            t_end = tconst + 14*tau #update integral time
-            return I_total(t_end, V1, 0, 0, J_offset, alpha, tau, pulse_type) - theta1
+        t = np.zeros(4)
 
-        t_const_1 = brentq(objective1, 0, 1)
+        def compute_time(theta):
+            # If no rotation is needed, no pulse at all
+            if theta == 0:
+                return 0.0
 
+            # Objective function for root finding
+            def objective(tconst):
+                t_end = tconst + 14*tau
+                return (
+                    I_total(
+                        t_end,
+                        V1,
+                        0,
+                        0,
+                        J_offset,
+                        alpha,
+                        tau,
+                        pulse_type
+                    )
+                    - theta
+                )
 
-        def objective2(tconst):
-            t_end = tconst + 14*tau #update integral time
-            return I_total(t_end, V2, 0, 0, J_offset, alpha, tau, pulse_type) - theta2
+            # Solve for constant part and add rise/fall
+            t_const = brentq(objective, 0, 1)
 
-        t_const_2 = brentq(objective2, 0, 1)
+            return t_const + 14*tau
+        
+        # Compute the four pulse durations
+        t[0] = compute_time(theta1)
+        t[1] = compute_time(theta2)
+        t[2] = compute_time(theta3)
+        t[3] = compute_time(theta4)
 
-        t1 = 14*tau + t_const_1
-        t2 = 14*tau + t_const_2
-        t_total = t2 + 2*t1
+        # Total time
+        t_total = np.sum(t)
 
     # Pulse timing
-    t_start1, t_end1 = 1e-9, t1 + 1e-9
-    t_start2, t_end2 = t1 + 1e-9, t1+t2+1e-9
-    t_start3, t_end3 = t1+t2+1e-9, t_total + 1e-9
+    t_start1, t_end1 = 1e-9, t[0] + 1e-9
+    t_start2, t_end2 = t[0] + 1e-9, t[0] + t[1] +1e-9
+    t_start3, t_end3 = t[0] + t[1] +1e-9, t[0]+t[1]+t[2] + 1e-9
+    t_start4, t_end4 = t[0]+t[1]+t[2] + 1e-9, t[0]+t[1]+t[2]+t[3] +1e-9, 
 
-    # T = t_total + 2e-9
-
-    T = 16e-9
-    N = 400
+    if T < t_total+2e-9:
+            raise ValueError(f"The simulation time is too small, for the pulse {pulse_type}. The total pulse time is {t_total}")
+    
     tlist = np.linspace(0, T, N)
     #calculate ideal operation
 
     # Parameter list passed into pulse generator
+
     if pulse_type == "square":
-        J12_params = [( t_start2, t_end2, V1)]
-        J23_params = [
-        (t_start1, t_end1, V2),
-        (t_start3, t_end3, V2)
-        ]
+        J12_params = []
+        J23_params = []
+
+        # J12 pulses
+        if t_start1 != t_end1:
+            J12_params.append((t_start1, t_end1, V1))
+        if t_start3 != t_end3:
+            J12_params.append((t_start3, t_end3, V1))
+
+        # J23 pulses
+        if t_start2 != t_end2:
+            J23_params.append((t_start2, t_end2, V2))
+        if t_start4 != t_end4:
+            J23_params.append((t_start4, t_end4, V2))
+
+
     elif pulse_type == "linear":
-        J12_params = [(t_start2, t_end2 , V1, t_rise, t_fall)]
-        J23_params = [
-        (t_start1, t_end1 , V2, t_rise, t_fall),
-        (t_start3, t_end3 , V2, t_rise, t_fall)
-        ]
+        J12_params = []
+        J23_params = []
+
+        # J12 pulse (rotation on z)
+        if t_start1 != t_end1:
+            J12_params.append(
+                (t_start1, t_end1, V1, t_rise, t_fall))
+        if t_start3 != t_end3:
+            J12_params.append(
+                (t_start3, t_end3, V1, t_rise, t_fall))
+        # J23 pulses (n rotation)
+        if t_start2 != t_end2:
+            J23_params.append(
+                (t_start2, t_end2, V2, t_rise, t_fall))
+        if t_start4 != t_end4:
+            J23_params.append(
+                (t_start4, t_end4, V2, t_rise, t_fall))
+
+
     elif pulse_type == "RC":
-            # ----------- J12 pulse (middle pulse) -----------
-        # J12 pulse (middle pulse)
-        J12_params = [
-            # RC rise
-            (t_start2, t_end2, V1, tau ),
-        ]
+        J12_params = []
+        J23_params = []
 
-        # J23 pulses (first and last pulse)
-        J23_params = [
-            # First pulse rise
-            (t_start1, t_end1, V2, tau),
-            # Second pulse rise
-            (t_start3, t_end3, V2, tau),
-        ]
+        # J12 pulse (rotation on z)
+        if t_start1 != t_end1:
+            J12_params.append(
+                (t_start1, t_end1, V1, tau))
+        if t_start3 != t_end3:
+            J12_params.append(
+                (t_start3, t_end3, V1, tau))
 
+        # J23 pulses (first and last)
+        if t_start2 != t_end2:
+            J23_params.append(
+                (t_start2, t_end2, V2, tau))
+        if t_start4 != t_end4:
+            J23_params.append(
+                (t_start4, t_end4, V2, tau))
+    else:
+        raise ValueError(f"Unsupported pulse_type: {pulse_type}")
 
     # Prepare functions J12(t), J23(t)
     J12_func = make_pulse_function(alpha, J_offset, pulse_type, J12_params)
@@ -334,25 +490,20 @@ def run_exchange_qubit_simulation(
     # Hamiltonian
     def H(t, args=None):
         return -0.5 * (J12_func(t) * sz - 0.5 * J23_func(t) * (sz + np.sqrt(3)*sx))
-
-    # Time evolution
-   
+    # Time evolution of the initial state
     result = sesolve(H, psi0, tlist)
-
     # qt.propagator returns list of U for each time step
     U_ideal = qt.propagator(H,tlist)
+
 
     #consider non ideal pulse
     # considering worst case so opposite time, first will be also shorter
     V1 = V1 - deltaV
     V2 = V2 + deltaV
 
-    #define noise
     # Generate noises
-
     x_white, S_white = noise_psd(T, N,  psd_func=lambda f: white_psd(f))
     x_pink, S_pink  = noise_psd( T, N,  psd_func=lambda f: pink_psd(f))
-
     x_white = x_white * white_amp #define rms value of the noise
     x_pink = x_pink * pink_amp
 
@@ -360,43 +511,52 @@ def run_exchange_qubit_simulation(
     white_func = lambda t: np.interp(t, tlist, x_white)
     pink_func  = lambda t: np.interp(t, tlist, x_pink)
 
-    jitter12 = np.random.normal(0, sigma_jitter)
-    jitter23_1 = np.random.normal(0, sigma_jitter)
-    jitter23_2 = np.random.normal(0, sigma_jitter)
-
-    # jitter23_1 = jitter23_2 = -jitter12 # this line is for the worst case, closer to oher simulation
-
+    #generate 4 realizations of jitter
+    jitter = np.random.normal(0, sigma_jitter, size=4)
 
     # Parameter list passed into pulse generator
+    J12_params = []
+    J23_params = []
+
     if pulse_type == "square":
-        J12_params = [( t_start2 + deltat/2, t_end2 - deltat/2, V1, white_func, pink_func, jitter12)]
-        J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 , V2, white_func, pink_func, jitter23_1),
-        (t_start3 - deltat/2, t_end3 + deltat/2 , V2 ,white_func, pink_func, jitter23_2)
-        ]
+
+        # J12 pulses
+        if t_start1 != t_end1:
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, white_func, pink_func, jitter[0]))
+        if t_start3 != t_end3:
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, white_func, pink_func, jitter[2]))
+        # J23 pulses
+        if t_start2 != t_end2:
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, white_func, pink_func, jitter[1]))
+        if t_start4 != t_end4:
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2 ,white_func, pink_func, jitter[3]))
+
     elif pulse_type == "linear":
-        J12_params = [(t_start2 + deltat/2, t_end2 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter12)]
-        J23_params = [
-        (t_start1 - deltat/2, t_end1 + deltat/2 , V2, t_rise, t_fall , white_func, pink_func, jitter23_1),
-        (t_start3 - deltat/2, t_end3 + deltat/2, V2, t_rise, t_fall, white_func, pink_func, jitter23_2)
-        ]
+        
+        # J12 pulses
+        if t_start1 != t_end1:
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter[0]))
+        if t_start3 != t_end3:
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter[2]))
+        # J23 pulses
+        if t_start2 != t_end2:
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, t_rise, t_fall, white_func, pink_func, jitter[1]))
+        if t_start4 != t_end4:
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, t_rise, t_fall ,white_func, pink_func, jitter[3]))
+       
     elif pulse_type == "RC":
-            # ----------- J12 pulse (middle pulse) -----------
-        # J12 pulse (middle pulse)
-        J12_params = [
-            # RC rise
-            (t_start2 + deltat/2, t_end2 - deltat/2, V1, tau ,white_func, pink_func, jitter12),
-        ]
-
-        # J23 pulses (first and last pulse)
-        J23_params = [
-            # First pulse rise
-            (t_start1 - deltat/2, t_end1 + deltat/2, V2, tau , white_func, pink_func, jitter23_1),
-            # Second pulse rise
-            (t_start3 - deltat/2, t_end3 + deltat/2, V2, tau, white_func, pink_func, jitter23_2),
-        ]
-
-
+        
+        # J12 pulses
+        if t_start1 != t_end1:
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, tau, white_func, pink_func, jitter[0]))
+        if t_start3 != t_end3:
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, tau, white_func, pink_func, jitter[2]))
+        # J23 pulses
+        if t_start2 != t_end2:
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, tau, white_func, pink_func, jitter[1]))
+        if t_start4 != t_end4:
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, tau, white_func, pink_func, jitter[3]))
+        
     # Prepare functions J12(t), J23(t)
     J12_func = make_pulse_function(alpha, J_offset, pulse_type, J12_params)
     J23_func = make_pulse_function(alpha, J_offset, pulse_type, J23_params)
@@ -407,23 +567,18 @@ def run_exchange_qubit_simulation(
 
     # Time evolution
     result = sesolve(H, psi0, tlist)
-
-    # Calculate the operator with and w/o rotating frame approx.
     # qt.propagator returns list of U for each time step
     U = qt.propagator(H,tlist)
+    #compute the superoperatore from U
     S = op_to_supop(U[-1])
-
     S_list = []
     S_list.append(S)
 
-
     # Fidelity can be calculated with operator
     f_pulse = calculate_fidelity(U[-1], U_ideal[-1])
-
-    #superoperator
+    # Fidelity using QPT
     f_QPT = fidelity_QPT(S_list, U_ideal[-1])
-
-    # Fidelity
+    # State Fidelity
     f = abs(psi_target.overlap(result.states[-1]))**2
 
     # Optional plots
@@ -436,64 +591,91 @@ def run_exchange_qubit_simulation(
         b.show()
 
     if plot_pulse:
-        J12_vals = [J12_func(t)/2/np.pi/1e6 for t in tlist]
-        J23_vals = [J23_func(t)/2/np.pi/1e6 for t in tlist]
-        plt.figure()
-        plt.plot(tlist*1e9, J12_vals, label="J12(t) [MHz]")
-        plt.plot(tlist*1e9, J23_vals, label="J23(t) [MHz]")
-        plt.legend()
-        plt.xlabel("Time [ns]")
-        plt.ylabel("Amplitude [MHz]")
-        save_figure(f"Pulse Sequence J {pulse_type} ", SAVE_DIR_1)
+        if not noise :
+            J12_vals = [J12_func(t)/2/np.pi/1e6 for t in tlist]
+            J23_vals = [J23_func(t)/2/np.pi/1e6 for t in tlist]
+            plt.figure()
+            plt.plot(tlist*1e9, J12_vals, label="J12(t) [MHz]")
+            plt.plot(tlist*1e9, J23_vals, label="J23(t) [MHz]")
+            plt.legend()
+            plt.xlabel("Time [ns]")
+            plt.ylabel("Amplitude [MHz]")
+            save_figure(f"Pulse Sequence J {pulse_type} deltaV {np.round(deltaV*1e6,2)} uV deltat {np.round(deltat*1e12,2)} ps", SAVE_DIR)
 
-        V12_func = make_voltage_function(pulse_type, J12_params)
-        V23_func = make_voltage_function(pulse_type, J23_params)
-        V12_vals = [V12_func(t)*1e3 for t in tlist]
-        V23_vals = [V23_func(t)*1e3 for t in tlist]
-        plt.figure()
-        plt.plot(tlist*1e9,V12_vals, label="V12(t) [mV]")
-        plt.plot(tlist*1e9, V23_vals, label="V23(t) [mV]")
-        plt.legend()
-        plt.xlabel("Time [ns]")
-        plt.ylabel("Amplitude [mV]")
-        save_figure(f"Pulse Sequence V {pulse_type}", SAVE_DIR_1)
+            V12_func = make_voltage_function(pulse_type, J12_params)
+            V23_func = make_voltage_function(pulse_type, J23_params)
+            V12_vals = [V12_func(t)*1e3 for t in tlist]
+            V23_vals = [V23_func(t)*1e3 for t in tlist]
+            plt.figure()
+            plt.plot(tlist*1e9,V12_vals, label="V12(t) [mV]")
+            plt.plot(tlist*1e9, V23_vals, label="V23(t) [mV]")
+            plt.legend()
+            plt.xlabel("Time [ns]")
+            plt.ylabel("Amplitude [mV]")
+            save_figure(f"Pulse Sequence V {pulse_type} deltaV {np.round(deltaV*1e6,2)} uV deltat {np.round(deltat*1e12,2)} ps", SAVE_DIR)
+        else:
+            J12_vals = [J12_func(t)/2/np.pi/1e6 for t in tlist]
+            J23_vals = [J23_func(t)/2/np.pi/1e6 for t in tlist]
+            plt.figure()
+            plt.plot(tlist*1e9, J12_vals, label="J12(t) [MHz]")
+            plt.plot(tlist*1e9, J23_vals, label="J23(t) [MHz]")
+            plt.legend()
+            plt.xlabel("Time [ns]")
+            plt.ylabel("Amplitude [MHz]")
+            save_figure(f"Pulse Sequence J {pulse_type} white noise {np.round(white_amp*1e3,2)} mVrms pink noise {np.round(pink_amp*1e3,2)}  jitter {np.round(sigma_jitter*1e12,2)} ps", SAVE_DIR)
+
+            V12_func = make_voltage_function(pulse_type, J12_params)
+            V23_func = make_voltage_function(pulse_type, J23_params)
+            V12_vals = [V12_func(t)*1e3 for t in tlist]
+            V23_vals = [V23_func(t)*1e3 for t in tlist]
+            plt.figure()
+            plt.plot(tlist*1e9,V12_vals, label="V12(t) [mV]")
+            plt.plot(tlist*1e9, V23_vals, label="V23(t) [mV]")
+            plt.legend()
+            plt.xlabel("Time [ns]")
+            plt.ylabel("Amplitude [mV]")
+            save_figure(f"Pulse Sequence {pulse_type} white noise {np.round(white_amp*1e3,2)} mVrms pink noise {np.round(pink_amp*1e3,2)}  jitter {np.round(sigma_jitter*1e12,2)} ps", SAVE_DIR)
+
 
     if plot_noise:
         plot_noise_func(x_white, x_pink, fs=N/T, labels=('White noise', 'Flicker Noise'))
 
     return f, f_pulse, f_QPT, S, U_ideal[-1]
 
+# Noise generator with arbitrary PSD
 def noise_psd(T, N, psd_func=lambda f: 1):
-    # Number of samples
-    fs = N/T
-    # Frequency vector (one-sided, skip DC)
-    freqs = np.fft.rfftfreq(N, d=1/fs)
-    freqs = freqs[1:]  # skip DC
+        fs = N/T
 
-    # Generate white noise in frequency domain
-    X_white = np.fft.rfft(np.random.randn(N))
+        #generate frequency from 0 to fs*N/2 if N is even
+        freqs = np.fft.rfftfreq(N,1/fs) 
+        #take only the frequencies different than 0 to avoid problems with 1/f
+        freqs = freqs[1:]
+        
+        #N is always even, then the length will be N/2 +1
+        #N-1 always odd (N+1/2)
+        X_white = np.fft.rfft(np.random.randn(N))
 
-    # Shape spectrum according to desired PSD
-    S = np.sqrt(psd_func(freqs))
-    S = S / np.sqrt(np.mean(S**2))  # normalize magnitude
-    # Match FFT length: X_white[1:] corresponds to freqs[1:]
-    X_white[1:] *= S  # leave DC unchanged
+        S = np.sqrt(psd_func(freqs))
+        S = S/np.sqrt(np.mean(S**2))
 
-    # Inverse FFT to time domain
-    x = np.fft.irfft(X_white, n=N)
+        #remove the first element of X that is the DC component
+        X_shaped = X_white[1:] * S
 
-    # Normalize to unit RMS
-    x_rms = x / np.std(x)
+        # Back to time domain
+        x = np.fft.irfft(X_shaped, n=N)
+        # Normalize to unit RMS ---
+        x_rms = x/np.std(x)
 
-    return x_rms, S**2
+        return x_rms, S**2
 
 # PSD functions
 def white_psd(f):
-    return np.ones_like(f)
+    S = np.ones_like(f)
+    return S
 
 def pink_psd(f):
-   return 1/np.where(f == 0, float('inf'), f)
-
+    S = 1/f
+    return S
 
 def plot_noise_func(x1, x2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     N = len(x1)
@@ -548,7 +730,7 @@ def plot_noise_func(x1, x2, fs=1e3, labels=('White noise', 'Flicker Noise')):
     print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink)
     plt.show()
 
-def simulate_infidelity_vs_noise(alpha, J_offset, V, 
+def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta3, theta4, t_rise, t_fall, tau,
                                  pulse_types=['square','linear','RC'],
                                  white_amps=np.linspace(0, 0.001, 10),
                                  pink_amps=np.linspace(0, 0.0002, 10),
@@ -597,7 +779,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V,
     infidelity_pink_std_state = {pulse: [] for pulse in pulse_types}
 
     # Simulation loop
-    for pulse in tqdm(pulse_types, desc="Pulse types"):
+    for pulse in tqdm(pulse_types, desc= "Pulse types"):
         # White noise sweep
         for w_amp in tqdm(white_amps, desc=f"{pulse} - White noise", leave=False):
             fidelities = []
@@ -610,18 +792,24 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V,
                         J_offset=J_offset,
                         V1=V,
                         V2=V,
+                        theta1= theta1,
+                        theta2= theta2,
+                        theta3= theta3,
+                        theta4= theta4,
                         alpha=alpha,
                         deltaV= 0,
                         pulse_type=pulse,
-                        t_rise=1e-9,
-                        t_fall=1e-9,
+                        t_rise = t_rise,
+                        t_fall = t_fall,
                         deltat= 0,
-                        tau=0.1e-9,
+                        tau=tau,
                         plot_bloch=False,
                         plot_pulse=False,
                         plot_noise=False,
                         white_amp=w_amp,
                         pink_amp=0,
+                        T=T,
+                        N=N
                     )
                     fidelities.append(fidelity)
                     fidelities_state.append(fidelity_state)
@@ -652,18 +840,24 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V,
                         J_offset=J_offset,
                         V1=V,
                         V2=V,
+                        theta1= theta1,
+                        theta2= theta2,
+                        theta3= theta3,
+                        theta4= theta4,
                         alpha=alpha,
-                        deltaV=0,
+                        deltaV= 0,
                         pulse_type=pulse,
-                        t_rise=1e-9,
-                        t_fall=1e-9,
+                        t_rise = t_rise,
+                        t_fall = t_fall,
                         deltat= 0,
-                        tau=0.1e-9,
+                        tau=tau,
                         plot_bloch=False,
                         plot_pulse=False,
                         plot_noise=False,
                         white_amp=0,
                         pink_amp=p_amp,
+                        T=T,
+                        N=N
                     )
                     fidelities.append(fidelity)
                     S_list.append(S)
@@ -701,12 +895,14 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V,
              pulse_types=pulse_types)
     print(f"Simulation completed. Results saved to '{output_file}'")
 
-def simulate_infidelity_jitter(pulse_types=['square','linear','RC'],
-                                sigma_jitters=np.linspace(0, 20e-12, 10),
+def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, tau,pulse_types=['square','linear','RC'],
+                                sigma_jitters=np.linspace(0, 100e-12, 10),
                                 iterations=10,
                                 alpha=50,
                                 J_offset=10e3,
                                 V=184e-3,
+                                T = 60e-9,
+                                N = 4000,
                                 output_file="infidelity_jitter_results.npz"):
     """
     Simulate qubit infidelity vs RMS timing jitter.
@@ -731,21 +927,29 @@ def simulate_infidelity_jitter(pulse_types=['square','linear','RC'],
             for _ in range(iterations):
                 S_list = []
                 for _ in range(iterations):
-                    fidelity_state, fidelity, fidelity_qpt, S, U_ideal = run_exchange_qubit_simulation(
+                    fidelity_state, fidelity, _, S, U_ideal = run_exchange_qubit_simulation(
                         J_offset=J_offset,
                         V1=V,
                         V2=V,
+                        theta1= theta1,
+                        theta2= theta2,
+                        theta3= theta3,
+                        theta4= theta4,
                         alpha=alpha,
-                        deltaV=0,
+                        deltaV= 0,
                         pulse_type=pulse,
-                        t_rise=1e-9,
-                        t_fall=1e-9,
-                        deltat=0,
-                        tau=0.1e-9,
+                        t_rise = t_rise,
+                        t_fall = t_fall,
+                        deltat= 0,
+                        tau=tau,
                         plot_bloch=False,
                         plot_pulse=False,
                         plot_noise=False,
+                        white_amp=0,
+                        pink_amp= 0,
                         sigma_jitter=sigma_j,
+                        T=T,
+                        N=N
                     )
                     fidelities.append(fidelity)
                     S_list.append(S)
@@ -780,67 +984,7 @@ def simulate_infidelity_jitter(pulse_types=['square','linear','RC'],
 
     print(f"Simulation completed. Results saved to '{output_file}'")
 
-# calibration step
-pulse_types=['square','linear','RC']
-for pulse_type in pulse_types:
-    fidelity, fidelity_pulse, f_QPT, _, _ = run_exchange_qubit_simulation(
-        J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-        deltaV=0.085e-3,
-        pulse_type=pulse_type,
-        t_rise = 1e-9,
-        t_fall = 1e-9,
-        deltat=0,
-        tau = 0.1e-9, 
-        plot_bloch=False,
-        plot_pulse=True,
-        white_amp = 0,
-        pink_amp = 0,
-    )
-    print(f"State fidelity {pulse_type}: {fidelity*100:.5f} % , operator fidelity: {fidelity_pulse*100:.5f} %")
-    # print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
-
    
-# # check deltaV
-# for pulse_type in pulse_types:
-#     fidelity_state, fidelity, f_QPT, S, _ = run_exchange_qubit_simulation(
-#         J_offset = 10e3, V1=184e-3, V2=184e-3, alpha=50,
-#         deltaV= 0, 
-#         pulse_type=pulse_type,
-#         t_rise = 1e-9,
-#         t_fall = 1e-9,
-#         deltat= 0,
-#         tau = 0.1e-9, 
-#         plot_bloch=False,
-#         plot_pulse= False,
-#         plot_noise= True,
-#         white_amp = 0.5e-3,
-#         pink_amp = 0.5e-3,
-#     )
-#     # print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
-#     print(f"Final fidelity {pulse_type}: pulse: {fidelity*100:.5f} %")
-#     print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
-
-# # check noise
-# for pulse_type in pulse_types:
-#      fidelity_state, fidelity, f_QPT = run_exchange_qubit_simulation(
-#             J_offset = 10e3,
-#             V1 = 184e-3,
-#             V2 = 184e-3,
-#             alpha = 50,
-#             deltaV = 0,
-#             pulse_type = pulse_type,
-#             t_rise = 1e-9,
-#             t_fall = 1e-9,
-#             deltat = 0,
-#             tau = 0.1e-9,
-#             plot_bloch = False,
-#             plot_pulse = True,  
-#             plot_noise= False,
-#             white_amp = 0,
-#             pink_amp = 0.02e-3,
-#         )
-#      print(f"Final fidelity {pulse_type}: {fidelity_state*100:.5f} % , pulse: {fidelity*100:.5f} %")
-#      print(f"Superoperator fidelity:  {f_QPT*100:.5f} %")
 
 # # check pink noise
 # iterations = 200

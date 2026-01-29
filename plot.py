@@ -103,6 +103,10 @@ def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_valu
                 plt.plot(amps*1e3, y, label=f"{pulse} ({label_suffix})", color=colors[pulse], marker=marker, linestyle=linestyle)
                 plt.fill_between(amps*1e3, y, y+3*delta, color='orange', alpha=0.1)
         title = f"Infidelity vs Noise Amplitude RMS - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
+
+        save_dir = Path(SAVE_DIR) / f"\{titles[metric]}"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
         plt.xlabel("Noise Amplitude [mV RMS]")
         plt.ylabel("Infidelity (1 - Fidelity)")
@@ -111,7 +115,7 @@ def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_valu
         plt.legend()
         plt.grid(True, which="both", ls="--")
         plt.tight_layout()
-        save_figure(title, SAVE_DIR)
+        save_figure(title, save_dir)
         plt.show()
 
 def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_value=1e-7):
@@ -163,6 +167,10 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_val
             plt.fill_between(sigma_jitters*1e12, y, y + 3*delta, color='orange', alpha=0.1)
 
         title = f"Infidelity vs Jitter - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
+
+        save_dir = Path(SAVE_DIR) / f"\{title[metric]}"
+        save_dir.mkdir(parents=True, exist_ok=True)
+
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
         plt.xlabel("RMS Timing Jitter σ [ps]")
         plt.ylabel("Infidelity (1 - Fidelity)")
@@ -171,279 +179,257 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_val
         plt.legend()
         plt.grid(True, which="both", ls="--")
         plt.tight_layout()
-        save_figure(title, SAVE_DIR)
+        save_figure(title, save_dir)
         plt.show()
 
-# pulse_types = ["square", "linear", "RC"]
-# #load data
-# data = np.load("infidelity_heatmaps.npz", allow_pickle=True)
+def plot_infidelity_heatmaps(
+    data_file,
+    pulse_types=("square", "linear", "RC"),
+    floor_value=1e-6,
+    save_dir=None,
+    save_prefix="Heatmap pulses",
+    plot_individual=True
+):
+    """
+    Plot infidelity heatmaps for different pulse types with a shared colorbar,
+    and optionally individual plots with a contour at log10(infidelity) = -4.
 
-# infidelity_maps = data["infidelity_maps"].item()
-# state_infidelity_maps = data["state_infidelity_maps"].item()
-# delta_V_list = data["delta_V_list"]
-# delta_t_list = data["delta_t_list"]
+    Parameters
+    ----------
+    data_file : str
+        Path to the .npz file containing the data.
+    pulse_types : iterable of str
+        Pulse types to plot (keys in the stored dictionaries).
+    floor_value : float
+        Minimum infidelity value to avoid log10(0).
+    save_dir : pathlib.Path or str or None
+        Directory where figures are saved. If None, figures are not saved.
+    save_prefix : str
+        Base name for the combined heatmap figure.
+    plot_individual : bool
+        Whether to also plot individual heatmaps with contours.
+    """
 
+    # --- Load data ---
+    data = np.load(data_file, allow_pickle=True)
+    infidelity_maps = data["infidelity_maps"].item()
+    delta_V_list = data["delta_V_list"]
+    delta_t_list = data["delta_t_list"]
 
-# # --- Clip infidelity maps to avoid log10 issues ---
-# # Set a small floor value (e.g., 1e-12) to prevent log10(0)
-# floor_value = 1e-6
-# for pulse in pulse_types:
-#     infidelity_maps[pulse] = np.clip(infidelity_maps[pulse], floor_value, None)
+    # --- Clip infidelity maps to avoid log10 issues ---
+    for pulse in pulse_types:
+        infidelity_maps[pulse] = np.clip(
+            infidelity_maps[pulse], floor_value, None
+        )
 
-# # --- Compute global min/max for color scaling ---
-# vmin = np.log10(np.min([infidelity_maps[p] for p in pulse_types]))
-# vmax = np.log10(np.max([infidelity_maps[p] for p in pulse_types]))
-
-# # --- Create figure and axes with controlled width ---
-# fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
-
-# for ax, pulse_type in zip(axes, pulse_types):
-#     im = ax.imshow(np.log10(infidelity_maps[pulse_type]),
-#                    origin='lower',
-#                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-#                    aspect='auto',
-#                    vmin=vmin, vmax=vmax)  # same color scale
-    
-#     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
-#     ax.set_xlabel("ΔV [mV]", labelpad=5)
-#     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
-
-# # --- Add a single colorbar for all axes ---
-# cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
-# cbar.set_label("log10(Infidelity)")
-
-# # --- Adjust layout to bring y-axis labels closer ---
-# save_figure(r"Heatmap pulses", SAVE_DIR_1)
-
-# plt.show()
-
-# # --- Individual plots with contour ---
-# for pulse_type in pulse_types:
-#     plt.figure(figsize=(16,9))
-#     im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
-#                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-#                     aspect='auto')
-#     # Highlight log10(infidelity) = -4 with a red contour
-#     plt.contour(np.log10(infidelity_maps[pulse_type]),
-#                 levels=[-4],
-#                 colors='red',
-#                 linewidths=2,
-#                 origin='lower',
-#                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
-#     plt.title(f"{pulse_type.capitalize()} pulse")
-#     plt.xlabel("ΔV [mV]")
-#     plt.ylabel("Δt [ps]")
-#     plt.colorbar(im, label="log10(Infidelity)")
-#     plt.grid(False)
-#     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_1)
-
-# plt.show()
-
-# # --- Clip infidelity maps to avoid log10 issues ---
-# # Set a small floor value (e.g., 1e-12) to prevent log10(0)
-# floor_value = 1e-6
-# for pulse in pulse_types:
-#     state_infidelity_maps[pulse] = np.clip(state_infidelity_maps[pulse], floor_value, None)
-
-# # --- Compute global min/max for color scaling ---
-# vmin = np.log10(np.min([state_infidelity_maps[p] for p in pulse_types]))
-# vmax = np.log10(np.max([state_infidelity_maps[p] for p in pulse_types]))
-
-# # --- Create figure and axes with controlled width ---
-# fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
-
-# for ax, pulse_type in zip(axes, pulse_types):
-#     im = ax.imshow(np.log10(state_infidelity_maps[pulse_type]),
-#                    origin='lower',
-#                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-#                    aspect='auto',
-#                    vmin=vmin, vmax=vmax)  # same color scale
-    
-#     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
-#     ax.set_xlabel("ΔV [mV]", labelpad=5)
-#     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
-
-# # --- Add a single colorbar for all axes ---
-# cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
-# cbar.set_label("log10(Infidelity)")
-
-# # --- Adjust layout to bring y-axis labels closer ---
-# save_figure(r"Heatmap pulses", SAVE_DIR_2)
-# plt.show()
-
-# # --- Individual plots with contour ---
-# for pulse_type in pulse_types:
-#     plt.figure(figsize=(16,9))
-#     im = plt.imshow(np.log10(state_infidelity_maps[pulse_type]), origin='lower',
-#                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
-#                     aspect='auto')
-#     # Highlight log10(infidelity) = -4 with a red contour
-#     plt.contour(np.log10(state_infidelity_maps[pulse_type]),
-#                 levels=[-4],
-#                 colors='red',
-#                 linewidths=2,
-#                 origin='lower',
-#                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
-#                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
-#     plt.title(f"{pulse_type.capitalize()} pulse")
-#     plt.xlabel("ΔV [mV]")
-#     plt.ylabel("Δt [ps]")
-#     plt.colorbar(im, label="log10(Infidelity)")
-#     plt.grid(False)
-#     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_2)
-
-# plt.show()
-
-#load data
-data = np.load("infidelity_results.npz", allow_pickle=True)
-
-infidelity_white = data["infidelity_white"].item()
-infidelity_white_std = data["infidelity_white_std"].item()
-infidelity_pink = data["infidelity_pink"].item()
-infidelity_pink_std = data["infidelity_pink_std"].item()
-infidelity_white_qpt = data["infidelity_white_qpt"].item()
-infidelity_pink_qpt = data["infidelity_pink_qpt"].item()
-infidelity_white_std_qpt = data["infidelity_white_std_qpt"].item()
-infidelity_pink_std_qpt = data["infidelity_pink_std_qpt"].item()
-infidelity_white_state = data["infidelity_white_state"].item()
-infidelity_pink_state = data["infidelity_pink_state"].item()
-infidelity_white_std_state = data["infidelity_white_std_state"].item()
-infidelity_pink_std_state = data["infidelity_pink_std_state"].item()
-white_amps = data["white_amps"]
-pink_amps = data["pink_amps"]
-pulse_types = data["pulse_types"]
-
-for pulse in pulse_types:
-    infidelity_white[pulse] = np.clip(infidelity_white[pulse], floor_value, None)
-    infidelity_pink[pulse] = np.clip(infidelity_pink[pulse], floor_value, None)
-    infidelity_white_state[pulse] = np.clip(infidelity_white_state[pulse], floor_value, None)
-    infidelity_pink_state[pulse] = np.clip(infidelity_pink_state[pulse], floor_value, None)
-    infidelity_white_qpt[pulse] = np.clip(infidelity_white_qpt[pulse], floor_value, None)
-    infidelity_pink_qpt[pulse] = np.clip(infidelity_pink_qpt[pulse], floor_value, None)
-# Plotting
-
-
-colors = {"square":"blue", "linear":"green", "RC":"red"}
-
-plt.figure(figsize=(16, 9))
-#plot with operator fidelity
-# White noise lines
-for pulse in pulse_types:
-    delta=np.array(np.abs(infidelity_white_std[pulse]))
-    plt.plot(white_amps*1e3, infidelity_white[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
-    plt.fill_between(
-        white_amps*1e3,
-        np.array(infidelity_white[pulse]),  # lower bound
-        np.array(infidelity_white[pulse]) + 3* delta,  # upper bound
-        color='orange',
-        alpha=0.1
+    # --- Compute global min/max for color scaling ---
+    vmin = np.log10(
+        np.min([infidelity_maps[p] for p in pulse_types])
+    )
+    vmax = np.log10(
+        np.max([infidelity_maps[p] for p in pulse_types])
     )
 
-# Pink noise lines
-for pulse in pulse_types:
-    delta=np.array(np.abs(infidelity_pink_std[pulse]))
-    plt.plot(pink_amps*1e3, infidelity_pink[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
-    plt.fill_between(
-        pink_amps*1e3,
-        np.array(infidelity_pink[pulse]),  # lower bound
-        np.array(infidelity_pink[pulse]) + 3*delta,  # upper bound
-        color='orange',
-        alpha=0.1
+    # --- Combined figure ---
+    fig, axes = plt.subplots(
+        1, len(pulse_types),
+        figsize=(16, 9),
+        gridspec_kw={'width_ratios': [1]*len(pulse_types), 'wspace': 0.5}
     )
 
-# Threshold line
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("Noise Amplitude [$mV_{RMS}$]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')  # log scale is useful for small infidelities
-plt.title("Infidelity vs Noise Amplitude RMS - evolution fidelity")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure(r"Infidelity vs Noise Amplitude RMS - evolution fidelity", SAVE_DIR)
-plt.show()
+    if len(pulse_types) == 1:
+        axes = [axes]
 
-#plot with operator fidelity
-# White noise lines
-plt.figure(figsize=(16, 9))
-for pulse in pulse_types:
+    for ax, pulse_type in zip(axes, pulse_types):
+        im = ax.imshow(
+            np.log10(infidelity_maps[pulse_type]),
+            origin='lower',
+            extent=[
+                delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+                delta_t_list[0]*1e12, delta_t_list[-1]*1e12
+            ],
+            aspect='auto',
+            vmin=vmin,
+            vmax=vmax
+        )
+        ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+        ax.set_xlabel("ΔV [mV]", labelpad=5)
+        ax.set_ylabel("Δt [ps]", labelpad=5)
 
-    delta=np.array(np.abs(infidelity_white_std_state[pulse]))
-    plt.plot(white_amps*1e3, infidelity_white_state[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
-    plt.fill_between(
-        white_amps*1e3,
-        np.array(infidelity_white_state[pulse]),  # lower bound
-        np.array(infidelity_white_state[pulse]) + 3* delta,  # upper bound
-        color='orange',
-        alpha=0.1
+    cbar = fig.colorbar(
+        im, ax=axes, orientation='vertical', fraction=0.05, pad=0.02
     )
+    cbar.set_label("log10(Infidelity)")
 
-# Pink noise lines
-for pulse in pulse_types:
-    delta=np.array(np.abs(infidelity_pink_std_state[pulse]))
-    plt.plot(pink_amps*1e3, infidelity_pink_state[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
-    plt.fill_between(
-        pink_amps*1e3,
-        np.array(infidelity_pink_state[pulse]),  # lower bound
-        np.array(infidelity_pink_state[pulse]) + 3*delta,  # upper bound
-        color='orange',
-        alpha=0.1
-    )
+    if save_dir is not None:
+        save_figure(save_prefix, save_dir)
 
-# Threshold line
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("Noise Amplitude [mV]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')  # log scale is useful for small infidelities
-plt.title("Infidelity vs Noise Amplitude RMS - state fidelity")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure(r"Infidelity vs Noise Amplitude RMS - state fidelity", SAVE_DIR)
-plt.show()
+    plt.show()
 
-#plot with qpt fidelity
-# White noise lines
-plt.figure(figsize=(16, 9))
-for pulse in pulse_types:
-    # delta=np.array(np.abs(infidelity_white_std_qpt[pulse]))
-    plt.plot(white_amps*1e3, infidelity_white_qpt[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
-    plt.fill_between(
-        white_amps*1e3,
-        np.array(infidelity_white_qpt[pulse]),  # lower bound
-        np.array(infidelity_white_qpt[pulse]) + 3* delta,  # upper bound
-        color='orange',
-        alpha=0.1
-    )
+    # --- Individual plots with contour ---
+    if plot_individual:
+        for pulse_type in pulse_types:
+            plt.figure(figsize=(16, 9))
+            im = plt.imshow(
+                np.log10(infidelity_maps[pulse_type]),
+                origin='lower',
+                extent=[
+                    delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+                    delta_t_list[0]*1e12, delta_t_list[-1]*1e12
+                ],
+                aspect='auto'
+            )
 
-# Pink noise lines
-for pulse in pulse_types:
-    # delta=np.array(np.abs(infidelity_pink_std_qpt[pulse]))
-    plt.plot(pink_amps*1e3, infidelity_pink_qpt[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
-    plt.fill_between(
-        pink_amps*1e3,
-        np.array(infidelity_pink_qpt[pulse]),  # lower bound
-        np.array(infidelity_pink_qpt[pulse]) + 3*delta,  # upper bound
-        color='orange',
-        alpha=0.1
-    )
+            plt.contour(
+                np.log10(infidelity_maps[pulse_type]),
+                levels=[-4],
+                colors='red',
+                linewidths=2,
+                origin='lower',
+                extent=[
+                    delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+                    delta_t_list[0]*1e12, delta_t_list[-1]*1e12
+                ]
+            )
 
-# Threshold line
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("Noise Amplitude [mV]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')  # log scale is useful for small infidelities
-plt.title("Infidelity vs Noise Amplitude RMS - QPT")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure(r"Infidelity vs Noise Amplitude RMS - QPT", SAVE_DIR)
-plt.show()
+            plt.title(f"{pulse_type.capitalize()} pulse")
+            plt.xlabel("ΔV [mV]")
+            plt.ylabel("Δt [ps]")
+            plt.colorbar(im, label="log10(Infidelity)")
+            plt.grid(False)
 
+            if save_dir is not None:
+                save_figure(f"{pulse_type.capitalize()} pulse", save_dir)
+
+            plt.show()
+
+# # pulse_types = ["square", "linear", "RC"]
 # # #load data
-# data = np.load("infidelity_results_err.npz", allow_pickle=True)
+# # data = np.load("infidelity_heatmaps.npz", allow_pickle=True)
+
+# # infidelity_maps = data["infidelity_maps"].item()
+# # state_infidelity_maps = data["state_infidelity_maps"].item()
+# # delta_V_list = data["delta_V_list"]
+# # delta_t_list = data["delta_t_list"]
+
+
+# # # --- Clip infidelity maps to avoid log10 issues ---
+# # # Set a small floor value (e.g., 1e-12) to prevent log10(0)
+# # floor_value = 1e-6
+# # for pulse in pulse_types:
+# #     infidelity_maps[pulse] = np.clip(infidelity_maps[pulse], floor_value, None)
+
+# # # --- Compute global min/max for color scaling ---
+# # vmin = np.log10(np.min([infidelity_maps[p] for p in pulse_types]))
+# # vmax = np.log10(np.max([infidelity_maps[p] for p in pulse_types]))
+
+# # # --- Create figure and axes with controlled width ---
+# # fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
+
+# # for ax, pulse_type in zip(axes, pulse_types):
+# #     im = ax.imshow(np.log10(infidelity_maps[pulse_type]),
+# #                    origin='lower',
+# #                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+# #                    aspect='auto',
+# #                    vmin=vmin, vmax=vmax)  # same color scale
+    
+# #     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+# #     ax.set_xlabel("ΔV [mV]", labelpad=5)
+# #     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
+
+# # # --- Add a single colorbar for all axes ---
+# # cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
+# # cbar.set_label("log10(Infidelity)")
+
+# # # --- Adjust layout to bring y-axis labels closer ---
+# # save_figure(r"Heatmap pulses", SAVE_DIR_1)
+
+# # plt.show()
+
+# # # --- Individual plots with contour ---
+# # for pulse_type in pulse_types:
+# #     plt.figure(figsize=(16,9))
+# #     im = plt.imshow(np.log10(infidelity_maps[pulse_type]), origin='lower',
+# #                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+# #                     aspect='auto')
+# #     # Highlight log10(infidelity) = -4 with a red contour
+# #     plt.contour(np.log10(infidelity_maps[pulse_type]),
+# #                 levels=[-4],
+# #                 colors='red',
+# #                 linewidths=2,
+# #                 origin='lower',
+# #                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
+# #     plt.title(f"{pulse_type.capitalize()} pulse")
+# #     plt.xlabel("ΔV [mV]")
+# #     plt.ylabel("Δt [ps]")
+# #     plt.colorbar(im, label="log10(Infidelity)")
+# #     plt.grid(False)
+# #     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_1)
+
+# # plt.show()
+
+# # # --- Clip infidelity maps to avoid log10 issues ---
+# # # Set a small floor value (e.g., 1e-12) to prevent log10(0)
+# # floor_value = 1e-6
+# # for pulse in pulse_types:
+# #     state_infidelity_maps[pulse] = np.clip(state_infidelity_maps[pulse], floor_value, None)
+
+# # # --- Compute global min/max for color scaling ---
+# # vmin = np.log10(np.min([state_infidelity_maps[p] for p in pulse_types]))
+# # vmax = np.log10(np.max([state_infidelity_maps[p] for p in pulse_types]))
+
+# # # --- Create figure and axes with controlled width ---
+# # fig, axes = plt.subplots(1, 3, figsize=(16,9), gridspec_kw={'width_ratios':[1,1,1], 'wspace':0.5})
+
+# # for ax, pulse_type in zip(axes, pulse_types):
+# #     im = ax.imshow(np.log10(state_infidelity_maps[pulse_type]),
+# #                    origin='lower',
+# #                    extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                            delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+# #                    aspect='auto',
+# #                    vmin=vmin, vmax=vmax)  # same color scale
+    
+# #     ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+# #     ax.set_xlabel("ΔV [mV]", labelpad=5)
+# #     ax.set_ylabel("Δt [ps]", labelpad=5)  # smaller pad to move axis closer
+
+# # # --- Add a single colorbar for all axes ---
+# # cbar = fig.colorbar(im, ax=axes.ravel(), orientation='vertical', fraction=0.05, pad=0.02)
+# # cbar.set_label("log10(Infidelity)")
+
+# # # --- Adjust layout to bring y-axis labels closer ---
+# # save_figure(r"Heatmap pulses", SAVE_DIR_2)
+# # plt.show()
+
+# # # --- Individual plots with contour ---
+# # for pulse_type in pulse_types:
+# #     plt.figure(figsize=(16,9))
+# #     im = plt.imshow(np.log10(state_infidelity_maps[pulse_type]), origin='lower',
+# #                     extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                             delta_t_list[0]*1e12, delta_t_list[-1]*1e12],
+# #                     aspect='auto')
+# #     # Highlight log10(infidelity) = -4 with a red contour
+# #     plt.contour(np.log10(state_infidelity_maps[pulse_type]),
+# #                 levels=[-4],
+# #                 colors='red',
+# #                 linewidths=2,
+# #                 origin='lower',
+# #                 extent=[delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+# #                         delta_t_list[0]*1e12, delta_t_list[-1]*1e12])
+# #     plt.title(f"{pulse_type.capitalize()} pulse")
+# #     plt.xlabel("ΔV [mV]")
+# #     plt.ylabel("Δt [ps]")
+# #     plt.colorbar(im, label="log10(Infidelity)")
+# #     plt.grid(False)
+# #     save_figure(rf"{pulse_type.capitalize()} pulse", SAVE_DIR_2)
+
+# # plt.show()
+
+# #load data
+# data = np.load("infidelity_results.npz", allow_pickle=True)
 
 # infidelity_white = data["infidelity_white"].item()
 # infidelity_white_std = data["infidelity_white_std"].item()
@@ -461,14 +447,20 @@ plt.show()
 # pink_amps = data["pink_amps"]
 # pulse_types = data["pulse_types"]
 
-
+# for pulse in pulse_types:
+#     infidelity_white[pulse] = np.clip(infidelity_white[pulse], floor_value, None)
+#     infidelity_pink[pulse] = np.clip(infidelity_pink[pulse], floor_value, None)
+#     infidelity_white_state[pulse] = np.clip(infidelity_white_state[pulse], floor_value, None)
+#     infidelity_pink_state[pulse] = np.clip(infidelity_pink_state[pulse], floor_value, None)
+#     infidelity_white_qpt[pulse] = np.clip(infidelity_white_qpt[pulse], floor_value, None)
+#     infidelity_pink_qpt[pulse] = np.clip(infidelity_pink_qpt[pulse], floor_value, None)
 # # Plotting
+
 
 # colors = {"square":"blue", "linear":"green", "RC":"red"}
 
-
-# #plot with operator fidelity
 # plt.figure(figsize=(16, 9))
+# #plot with operator fidelity
 # # White noise lines
 # for pulse in pulse_types:
 #     delta=np.array(np.abs(infidelity_white_std[pulse]))
@@ -495,19 +487,20 @@ plt.show()
 
 # # Threshold line
 # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-# plt.xlabel("Noise Amplitude [mV]")
+# plt.xlabel("Noise Amplitude [$mV_{RMS}$]")
 # plt.ylabel("Infidelity (1 - Fidelity)")
 # plt.yscale('log')  # log scale is useful for small infidelities
-# plt.title("Infidelity vs Noise Amplitude RMS - evolution fidelity, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# plt.title("Infidelity vs Noise Amplitude RMS - evolution fidelity")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure(r"Infidelity vs Noise Amplitude RMS err - evolution fidelity", SAVE_DIR)
+# save_figure(r"Infidelity vs Noise Amplitude RMS - evolution fidelity", SAVE_DIR)
 # plt.show()
 
 # #plot with operator fidelity
 # # White noise lines
 # plt.figure(figsize=(16, 9))
 # for pulse in pulse_types:
+
 #     delta=np.array(np.abs(infidelity_white_std_state[pulse]))
 #     plt.plot(white_amps*1e3, infidelity_white_state[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
 #     plt.fill_between(
@@ -535,17 +528,17 @@ plt.show()
 # plt.xlabel("Noise Amplitude [mV]")
 # plt.ylabel("Infidelity (1 - Fidelity)")
 # plt.yscale('log')  # log scale is useful for small infidelities
-# plt.title("Infidelity vs Noise Amplitude RMS - state fidelity, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# plt.title("Infidelity vs Noise Amplitude RMS - state fidelity")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure(r"Infidelity vs Noise Amplitude RMS err - state fidelity", SAVE_DIR)
+# save_figure(r"Infidelity vs Noise Amplitude RMS - state fidelity", SAVE_DIR)
 # plt.show()
 
 # #plot with qpt fidelity
 # # White noise lines
 # plt.figure(figsize=(16, 9))
 # for pulse in pulse_types:
-#     delta=np.array(np.abs(infidelity_white_std_qpt[pulse]))
+#     # delta=np.array(np.abs(infidelity_white_std_qpt[pulse]))
 #     plt.plot(white_amps*1e3, infidelity_white_qpt[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
 #     plt.fill_between(
 #         white_amps*1e3,
@@ -557,7 +550,7 @@ plt.show()
 
 # # Pink noise lines
 # for pulse in pulse_types:
-#     delta=np.array(np.abs(infidelity_pink_std_qpt[pulse]))
+#     # delta=np.array(np.abs(infidelity_pink_std_qpt[pulse]))
 #     plt.plot(pink_amps*1e3, infidelity_pink_qpt[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
 #     plt.fill_between(
 #         pink_amps*1e3,
@@ -572,293 +565,335 @@ plt.show()
 # plt.xlabel("Noise Amplitude [mV]")
 # plt.ylabel("Infidelity (1 - Fidelity)")
 # plt.yscale('log')  # log scale is useful for small infidelities
-# plt.title("Infidelity vs Noise Amplitude RMS - QPT, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# plt.title("Infidelity vs Noise Amplitude RMS - QPT")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure(r"Infidelity vs Noise Amplitude RMS err - QPT", SAVE_DIR)
+# save_figure(r"Infidelity vs Noise Amplitude RMS - QPT", SAVE_DIR)
 # plt.show()
 
+# # # #load data
+# # data = np.load("infidelity_results_err.npz", allow_pickle=True)
 
-# #heatmaps no errors
+# # infidelity_white = data["infidelity_white"].item()
+# # infidelity_white_std = data["infidelity_white_std"].item()
+# # infidelity_pink = data["infidelity_pink"].item()
+# # infidelity_pink_std = data["infidelity_pink_std"].item()
+# # infidelity_white_qpt = data["infidelity_white_qpt"].item()
+# # infidelity_pink_qpt = data["infidelity_pink_qpt"].item()
+# # infidelity_white_std_qpt = data["infidelity_white_std_qpt"].item()
+# # infidelity_pink_std_qpt = data["infidelity_pink_std_qpt"].item()
+# # infidelity_white_state = data["infidelity_white_state"].item()
+# # infidelity_pink_state = data["infidelity_pink_state"].item()
+# # infidelity_white_std_state = data["infidelity_white_std_state"].item()
+# # infidelity_pink_std_state = data["infidelity_pink_std_state"].item()
+# # white_amps = data["white_amps"]
+# # pink_amps = data["pink_amps"]
+# # pulse_types = data["pulse_types"]
 
-# data = np.load("infidelity_results_heatmap.npz", allow_pickle=True)
 
-# infidelities = data["infidelities"].item()
-# infidelities_std = data["infidelities_std"].item()
-# infidelities_qpt = data["infidelities_qpt"].item()
-# infidelities_std_qpt = data["infidelities_std_qpt"].item()
-# infidelities_state = data["infidelities_state"].item()
-# infidelities_std_state = data["infidelities_std_state"].item()
-# white_amps = data["white_amps"]
-# pink_amps = data["pink_amps"]
-# pulse_types = data["pulse_types"]
+# # # Plotting
+
+# # colors = {"square":"blue", "linear":"green", "RC":"red"}
 
 
-# for pulse in pulse_types:
-#     infidelities[pulse] = np.clip(infidelities[pulse], floor_value, None)
-#     infidelities_state[pulse] = np.clip(infidelities_state[pulse], floor_value, None)
-#     infidelities_qpt[pulse] = np.clip(infidelities_qpt[pulse], floor_value, None)
-# # Plotting
+# # #plot with operator fidelity
+# # plt.figure(figsize=(16, 9))
+# # # White noise lines
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_white_std[pulse]))
+# #     plt.plot(white_amps*1e3, infidelity_white[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         white_amps*1e3,
+# #         np.array(infidelity_white[pulse]),  # lower bound
+# #         np.array(infidelity_white[pulse]) + 3* delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
 
-# # Plot heatmaps
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, evolution fidelity")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min(infidelities[pulse]+3*infidelities_std[pulse]), vmax=np.max(infidelities[pulse]+3*infidelities_std[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # # Pink noise lines
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_pink_std[pulse]))
+# #     plt.plot(pink_amps*1e3, infidelity_pink[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
+# #     plt.fill_between(
+# #         pink_amps*1e3,
+# #         np.array(infidelity_pink[pulse]),  # lower bound
+# #         np.array(infidelity_pink[pulse]) + 3*delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # # Threshold line
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("Noise Amplitude [mV]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')  # log scale is useful for small infidelities
+# # plt.title("Infidelity vs Noise Amplitude RMS - evolution fidelity, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure(r"Infidelity vs Noise Amplitude RMS err - evolution fidelity", SAVE_DIR)
+# # plt.show()
+
+# # #plot with operator fidelity
+# # # White noise lines
+# # plt.figure(figsize=(16, 9))
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_white_std_state[pulse]))
+# #     plt.plot(white_amps*1e3, infidelity_white_state[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         white_amps*1e3,
+# #         np.array(infidelity_white_state[pulse]),  # lower bound
+# #         np.array(infidelity_white_state[pulse]) + 3* delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # # Pink noise lines
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_pink_std_state[pulse]))
+# #     plt.plot(pink_amps*1e3, infidelity_pink_state[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
+# #     plt.fill_between(
+# #         pink_amps*1e3,
+# #         np.array(infidelity_pink_state[pulse]),  # lower bound
+# #         np.array(infidelity_pink_state[pulse]) + 3*delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # # Threshold line
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("Noise Amplitude [mV]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')  # log scale is useful for small infidelities
+# # plt.title("Infidelity vs Noise Amplitude RMS - state fidelity, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure(r"Infidelity vs Noise Amplitude RMS err - state fidelity", SAVE_DIR)
+# # plt.show()
+
+# # #plot with qpt fidelity
+# # # White noise lines
+# # plt.figure(figsize=(16, 9))
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_white_std_qpt[pulse]))
+# #     plt.plot(white_amps*1e3, infidelity_white_qpt[pulse],  label=f"{pulse} (white)", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         white_amps*1e3,
+# #         np.array(infidelity_white_qpt[pulse]),  # lower bound
+# #         np.array(infidelity_white_qpt[pulse]) + 3* delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # # Pink noise lines
+# # for pulse in pulse_types:
+# #     delta=np.array(np.abs(infidelity_pink_std_qpt[pulse]))
+# #     plt.plot(pink_amps*1e3, infidelity_pink_qpt[pulse],  label=f"{pulse} (Flicker)", color=colors[pulse], marker='x', linestyle = '--')
+# #     plt.fill_between(
+# #         pink_amps*1e3,
+# #         np.array(infidelity_pink_qpt[pulse]),  # lower bound
+# #         np.array(infidelity_pink_qpt[pulse]) + 3*delta,  # upper bound
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # # Threshold line
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("Noise Amplitude [mV]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')  # log scale is useful for small infidelities
+# # plt.title("Infidelity vs Noise Amplitude RMS - QPT, $\Delta t = 1 \, ps$, $\Delta V = 0.05 \, mV$")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure(r"Infidelity vs Noise Amplitude RMS err - QPT", SAVE_DIR)
+# # plt.show()
+
+
+# # #heatmaps no errors
+
+# # data = np.load("infidelity_results_heatmap.npz", allow_pickle=True)
+
+# # infidelities = data["infidelities"].item()
+# # infidelities_std = data["infidelities_std"].item()
+# # infidelities_qpt = data["infidelities_qpt"].item()
+# # infidelities_std_qpt = data["infidelities_std_qpt"].item()
+# # infidelities_state = data["infidelities_state"].item()
+# # infidelities_std_state = data["infidelities_std_state"].item()
+# # white_amps = data["white_amps"]
+# # pink_amps = data["pink_amps"]
+# # pulse_types = data["pulse_types"]
+
+
+# # for pulse in pulse_types:
+# #     infidelities[pulse] = np.clip(infidelities[pulse], floor_value, None)
+# #     infidelities_state[pulse] = np.clip(infidelities_state[pulse], floor_value, None)
+# #     infidelities_qpt[pulse] = np.clip(infidelities_qpt[pulse], floor_value, None)
+# # # Plotting
+
+# # # Plot heatmaps
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, evolution fidelity")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min(infidelities[pulse]+3*infidelities_std[pulse]), vmax=np.max(infidelities[pulse]+3*infidelities_std[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
-#     save_figure(rf"Infidelity Heatmap - {pulse} pulse, evolution fidelity", SAVE_DIR)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
+# #     save_figure(rf"Infidelity Heatmap - {pulse} pulse, evolution fidelity", SAVE_DIR)
    
 
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, QPT")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]), vmax=np.max(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, QPT")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]), vmax=np.max(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
-#     save_figure(rf"Infidelity Heatmap - {pulse} pulse, QPT", SAVE_DIR)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
+# #     save_figure(rf"Infidelity Heatmap - {pulse} pulse, QPT", SAVE_DIR)
 
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, state fidelity")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities_state[pulse]+3*infidelities_std_state[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min( infidelities_state[pulse]+3*infidelities_std_state[pulse]), vmax=np.max( infidelities_state[pulse]+3*infidelities_std_state[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, state fidelity")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities_state[pulse]+3*infidelities_std_state[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min( infidelities_state[pulse]+3*infidelities_std_state[pulse]), vmax=np.max( infidelities_state[pulse]+3*infidelities_std_state[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities_state[pulse]+3*infidelities_std_state[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities_state[pulse]+3*infidelities_std_state[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
-#     save_figure(rf"Infidelity Heatmap - {pulse} pulse, state fidelity", SAVE_DIR)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
+# #     save_figure(rf"Infidelity Heatmap - {pulse} pulse, state fidelity", SAVE_DIR)
    
-# plt.show()
+# # plt.show()
 
-# # #heatmaps errors
+# # # #heatmaps errors
 
-# data = np.load("infidelity_results_heatmap_err.npz", allow_pickle=True)
+# # data = np.load("infidelity_results_heatmap_err.npz", allow_pickle=True)
 
-# infidelities = data["infidelities"].item()
-# infidelities_std = data["infidelities_std"].item()
-# infidelities_qpt = data["infidelities_qpt"].item()
-# infidelities_std_qpt = data["infidelities_std_qpt"].item()
-# infidelities_state = data["infidelities_state"].item()
-# infidelities_std_state = data["infidelities_std_state"].item()
-# white_amps = data["white_amps"]
-# pink_amps = data["pink_amps"]
-# pulse_types = data["pulse_types"]
+# # infidelities = data["infidelities"].item()
+# # infidelities_std = data["infidelities_std"].item()
+# # infidelities_qpt = data["infidelities_qpt"].item()
+# # infidelities_std_qpt = data["infidelities_std_qpt"].item()
+# # infidelities_state = data["infidelities_state"].item()
+# # infidelities_std_state = data["infidelities_std_state"].item()
+# # white_amps = data["white_amps"]
+# # pink_amps = data["pink_amps"]
+# # pulse_types = data["pulse_types"]
 
-# # Plot heatmaps
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, evoution fidelity")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min(infidelities[pulse]+3*infidelities_std[pulse]), vmax=np.max(infidelities[pulse]+3*infidelities_std[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # # Plot heatmaps
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, evoution fidelity")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities[pulse]+3*infidelities_std[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min(infidelities[pulse]+3*infidelities_std[pulse]), vmax=np.max(infidelities[pulse]+3*infidelities_std[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities[pulse]+3*infidelities_std[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
-#     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, evolution fidelity", SAVE_DIR)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
+# #     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, evolution fidelity", SAVE_DIR)
    
 
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, QPT")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]), vmax=np.max(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, QPT")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse]), vmax=np.max(infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities_qpt[pulse]+3*infidelities_std_qpt[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
 
-#     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, QPT", SAVE_DIR)
+# #     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, QPT", SAVE_DIR)
 
-# for pulse in pulse_types:
-#     plt.figure(figsize=(16, 9))
-#     plt.title(f"Infidelity Heatmap - {pulse} pulse, state fidelity")
-#     # Use log scale for better visibility
-#     im = plt.imshow((infidelities_state[pulse]+3*infidelities_std_state[pulse]).T, origin='lower',
-#                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
-#                     norm=LogNorm(vmin=np.min(infidelities_state[pulse]+3*infidelities_std_state[pulse]), vmax=np.max(infidelities_state[pulse]+3*infidelities_std_state[pulse])),
-#                     aspect='auto', cmap='viridis')
+# # for pulse in pulse_types:
+# #     plt.figure(figsize=(16, 9))
+# #     plt.title(f"Infidelity Heatmap - {pulse} pulse, state fidelity")
+# #     # Use log scale for better visibility
+# #     im = plt.imshow((infidelities_state[pulse]+3*infidelities_std_state[pulse]).T, origin='lower',
+# #                     extent=[white_amps[0]*1e3, white_amps[-1]*1e3, pink_amps[0]*1e3, pink_amps[-1]*1e3],
+# #                     norm=LogNorm(vmin=np.min(infidelities_state[pulse]+3*infidelities_std_state[pulse]), vmax=np.max(infidelities_state[pulse]+3*infidelities_std_state[pulse])),
+# #                     aspect='auto', cmap='viridis')
     
-#     # Add colorbar
-#     cbar = plt.colorbar(im)
-#     cbar.set_label('Infidelity (1 - Fidelity)')
+# #     # Add colorbar
+# #     cbar = plt.colorbar(im)
+# #     cbar.set_label('Infidelity (1 - Fidelity)')
     
-#     # Overlay contour line where infidelity = 1e-4
-#     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
-#     cs = plt.contour(W, P, infidelities_state[pulse]+3*infidelities_std_state[pulse], levels=[1e-4], colors='red', linewidths=2)
-#     plt.clabel(cs, fmt='1e-4', colors='red')
+# #     # Overlay contour line where infidelity = 1e-4
+# #     W, P = np.meshgrid(white_amps*1e3, pink_amps*1e3, indexing='ij')
+# #     cs = plt.contour(W, P, infidelities_state[pulse]+3*infidelities_std_state[pulse], levels=[1e-4], colors='red', linewidths=2)
+# #     plt.clabel(cs, fmt='1e-4', colors='red')
     
-#     plt.xlabel("White Noise Amplitude")
-#     plt.ylabel("Pink Noise Amplitude")
-#     plt.grid(False)
+# #     plt.xlabel("White Noise Amplitude")
+# #     plt.ylabel("Pink Noise Amplitude")
+# #     plt.grid(False)
 
-#     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, state fidelity", SAVE_DIR)
+# #     save_figure(rf"Infidelity Heatmap err - {pulse} pulse, state fidelity", SAVE_DIR)
    
-# plt.show()
-
-#load data
-# Save data
-data = np.load("infidelity_jitter_results.npz", allow_pickle=True)
-
-infidelity_jitter=data["infidelity_jitter"].item()
-infidelity_jitter_std=data["infidelity_jitter_std"].item()
-infidelity_jitter_qpt=data["infidelity_jitter_qpt"].item()
-infidelity_jitter_std_qpt=data["infidelity_jitter_std_qpt"].item()
-infidelity_jitter_state=data["infidelity_jitter_state"].item()
-infidelity_jitter_std_state=data["infidelity_jitter_std_state"].item()
-sigma_jitters=data["sigma_jitters"]
-pulse_types=data["pulse_types"]
-
-# Optional: set a floor for plotting
-floor_value = 1e-7
-for pulse in pulse_types:
-    infidelity_jitter[pulse] = np.clip(infidelity_jitter[pulse], floor_value, None)
-    infidelity_jitter_state[pulse] = np.clip(infidelity_jitter_state[pulse], floor_value, None)
-    infidelity_jitter_qpt[pulse] = np.clip(infidelity_jitter_qpt[pulse], floor_value, None)
-
-colors = {"square":"blue", "linear":"green", "RC":"red"}
-
-# -------------------------------
-# Evolution fidelity plot
-plt.figure(figsize=(16,9))
-for pulse in pulse_types:
-    delta = np.array(np.abs(infidelity_jitter_std[pulse]))
-    plt.plot(sigma_jitters*1e12, infidelity_jitter[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
-    plt.fill_between(
-        sigma_jitters*1e12,
-        np.array(infidelity_jitter[pulse]),
-        np.array(infidelity_jitter[pulse]) + 3*delta,
-        color='orange',
-        alpha=0.1
-    )
-
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("RMS Timing Jitter σ [ps]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')
-plt.title("Infidelity vs RMS Timing Jitter - evolution fidelity")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure("Infidelity vs RMS Timing Jitter - evolution fidelity", SAVE_DIR)
-plt.show()
-
-# -------------------------------
-# State fidelity plot
-plt.figure(figsize=(16,9))
-for pulse in pulse_types:
-    delta = np.array(np.abs(infidelity_jitter_std_state[pulse]))
-    plt.plot(sigma_jitters*1e12, infidelity_jitter_state[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
-    plt.fill_between(
-        sigma_jitters*1e12,
-        np.array(infidelity_jitter_state[pulse]),
-        np.array(infidelity_jitter_state[pulse]) + 3*delta,
-        color='orange',
-        alpha=0.1
-    )
-
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("RMS Timing Jitter σ [ps]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')
-plt.title("Infidelity vs RMS Timing Jitter - state fidelity")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure("Infidelity vs RMS Timing Jitter - state fidelity", SAVE_DIR)
-plt.show()
-
-# -------------------------------
-# QPT fidelity plot
-plt.figure(figsize=(16,9))
-for pulse in pulse_types:
-    # delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
-    plt.plot(sigma_jitters*1e12, infidelity_jitter_qpt[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
-    plt.fill_between(
-        sigma_jitters*1e12,
-        np.array(infidelity_jitter_qpt[pulse]),
-        np.array(infidelity_jitter_qpt[pulse]) + 3*delta,
-        color='orange',
-        alpha=0.1
-    )
-
-plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
-plt.xlabel("RMS Timing Jitter σ [ps]")
-plt.ylabel("Infidelity (1 - Fidelity)")
-plt.yscale('log')
-plt.title("Infidelity vs RMS Timing Jitter - QPT fidelity")
-plt.legend()
-plt.grid(True, which="both", ls="--")
-save_figure("Infidelity vs RMS Timing Jitter - QPT fidelity", SAVE_DIR)
-plt.show()
+# # plt.show()
 
 # #load data
 # # Save data
-# data = np.load("infidelity_jitter_results_err.npz", allow_pickle=True)
+# data = np.load("infidelity_jitter_results.npz", allow_pickle=True)
 
 # infidelity_jitter=data["infidelity_jitter"].item()
 # infidelity_jitter_std=data["infidelity_jitter_std"].item()
@@ -899,7 +934,7 @@ plt.show()
 # plt.title("Infidelity vs RMS Timing Jitter - evolution fidelity")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure("Infidelity vs RMS Timing Jitter err - evolution fidelity", SAVE_DIR)
+# save_figure("Infidelity vs RMS Timing Jitter - evolution fidelity", SAVE_DIR)
 # plt.show()
 
 # # -------------------------------
@@ -923,14 +958,14 @@ plt.show()
 # plt.title("Infidelity vs RMS Timing Jitter - state fidelity")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure("Infidelity vs RMS Timing Jitter err- state fidelity", SAVE_DIR)
+# save_figure("Infidelity vs RMS Timing Jitter - state fidelity", SAVE_DIR)
 # plt.show()
 
 # # -------------------------------
 # # QPT fidelity plot
 # plt.figure(figsize=(16,9))
 # for pulse in pulse_types:
-#     delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
+#     # delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
 #     plt.plot(sigma_jitters*1e12, infidelity_jitter_qpt[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
 #     plt.fill_between(
 #         sigma_jitters*1e12,
@@ -947,5 +982,99 @@ plt.show()
 # plt.title("Infidelity vs RMS Timing Jitter - QPT fidelity")
 # plt.legend()
 # plt.grid(True, which="both", ls="--")
-# save_figure("Infidelity vs RMS Timing Jitter err - QPT fidelity", SAVE_DIR)
+# save_figure("Infidelity vs RMS Timing Jitter - QPT fidelity", SAVE_DIR)
 # plt.show()
+
+# # #load data
+# # # Save data
+# # data = np.load("infidelity_jitter_results_err.npz", allow_pickle=True)
+
+# # infidelity_jitter=data["infidelity_jitter"].item()
+# # infidelity_jitter_std=data["infidelity_jitter_std"].item()
+# # infidelity_jitter_qpt=data["infidelity_jitter_qpt"].item()
+# # infidelity_jitter_std_qpt=data["infidelity_jitter_std_qpt"].item()
+# # infidelity_jitter_state=data["infidelity_jitter_state"].item()
+# # infidelity_jitter_std_state=data["infidelity_jitter_std_state"].item()
+# # sigma_jitters=data["sigma_jitters"]
+# # pulse_types=data["pulse_types"]
+
+# # # Optional: set a floor for plotting
+# # floor_value = 1e-7
+# # for pulse in pulse_types:
+# #     infidelity_jitter[pulse] = np.clip(infidelity_jitter[pulse], floor_value, None)
+# #     infidelity_jitter_state[pulse] = np.clip(infidelity_jitter_state[pulse], floor_value, None)
+# #     infidelity_jitter_qpt[pulse] = np.clip(infidelity_jitter_qpt[pulse], floor_value, None)
+
+# # colors = {"square":"blue", "linear":"green", "RC":"red"}
+
+# # # -------------------------------
+# # # Evolution fidelity plot
+# # plt.figure(figsize=(16,9))
+# # for pulse in pulse_types:
+# #     delta = np.array(np.abs(infidelity_jitter_std[pulse]))
+# #     plt.plot(sigma_jitters*1e12, infidelity_jitter[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         sigma_jitters*1e12,
+# #         np.array(infidelity_jitter[pulse]),
+# #         np.array(infidelity_jitter[pulse]) + 3*delta,
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("RMS Timing Jitter σ [ps]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')
+# # plt.title("Infidelity vs RMS Timing Jitter - evolution fidelity")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure("Infidelity vs RMS Timing Jitter err - evolution fidelity", SAVE_DIR)
+# # plt.show()
+
+# # # -------------------------------
+# # # State fidelity plot
+# # plt.figure(figsize=(16,9))
+# # for pulse in pulse_types:
+# #     delta = np.array(np.abs(infidelity_jitter_std_state[pulse]))
+# #     plt.plot(sigma_jitters*1e12, infidelity_jitter_state[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         sigma_jitters*1e12,
+# #         np.array(infidelity_jitter_state[pulse]),
+# #         np.array(infidelity_jitter_state[pulse]) + 3*delta,
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("RMS Timing Jitter σ [ps]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')
+# # plt.title("Infidelity vs RMS Timing Jitter - state fidelity")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure("Infidelity vs RMS Timing Jitter err- state fidelity", SAVE_DIR)
+# # plt.show()
+
+# # # -------------------------------
+# # # QPT fidelity plot
+# # plt.figure(figsize=(16,9))
+# # for pulse in pulse_types:
+# #     delta = np.array(np.abs(infidelity_jitter_std_qpt[pulse]))
+# #     plt.plot(sigma_jitters*1e12, infidelity_jitter_qpt[pulse], label=f"{pulse}", color=colors[pulse], marker='o')
+# #     plt.fill_between(
+# #         sigma_jitters*1e12,
+# #         np.array(infidelity_jitter_qpt[pulse]),
+# #         np.array(infidelity_jitter_qpt[pulse]) + 3*delta,
+# #         color='orange',
+# #         alpha=0.1
+# #     )
+
+# # plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
+# # plt.xlabel("RMS Timing Jitter σ [ps]")
+# # plt.ylabel("Infidelity (1 - Fidelity)")
+# # plt.yscale('log')
+# # plt.title("Infidelity vs RMS Timing Jitter - QPT fidelity")
+# # plt.legend()
+# # plt.grid(True, which="both", ls="--")
+# # save_figure("Infidelity vs RMS Timing Jitter err - QPT fidelity", SAVE_DIR)
+# # plt.show()
