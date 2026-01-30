@@ -138,6 +138,7 @@ Results/
                 └── Plots/
                     ├── Clean/
                     └── Noise/
+
 - Data/ – NPZ files storing simulation results.
 
 - Plots/ – Visualizations of fidelities, heatmaps, and noise effects.
