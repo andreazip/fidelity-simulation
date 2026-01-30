@@ -44,7 +44,7 @@ PPT_STYLE = {
 
 plt.rcParams.update(PPT_STYLE)
 
-def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_value=1e-6, noise_type_labels=("white", "pink")):
+def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-6, noise_type_labels=("white", "pink")):
     """
     Load simulation results and plot infidelity vs noise amplitude for:
     - evolution fidelity
@@ -104,7 +104,7 @@ def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_valu
                 plt.fill_between(amps*1e3, y, y+3*delta, color='orange', alpha=0.1)
         title = f"Infidelity vs Noise Amplitude RMS - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
 
-        save_dir = Path(SAVE_DIR) / f"\{titles[metric]}"
+        save_dir = Path(SAVE_DIR) / titles[metric]
         save_dir.mkdir(parents=True, exist_ok=True)
 
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
@@ -117,8 +117,9 @@ def plot_infidelity_vs_noise(alpha, Joffset, data_file, SAVE_DIR=".", floor_valu
         plt.tight_layout()
         save_figure(title, save_dir)
         plt.show()
+        print(f"Figure saved at {save_dir}\n")
 
-def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_value=1e-7):
+def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
     """
     Load RMS timing jitter simulation results and plot infidelity vs jitter for:
     - evolution fidelity
@@ -168,7 +169,9 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_val
 
         title = f"Infidelity vs Jitter - {titles[metric]}, alpha = {alpha/2}, Joffset = {Joffset/1e3} kHz"
 
-        save_dir = Path(SAVE_DIR) / f"\{title[metric]}"
+        save_dir = Path(SAVE_DIR) / titles[metric]
+
+        print(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
 
         plt.axhline(1e-4, color='black', linestyle=':', label='Infidelity threshold')
@@ -181,6 +184,11 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=".", floor_val
         plt.tight_layout()
         save_figure(title, save_dir)
         plt.show()
+        print(f"Figure saved at {save_dir}\n")
+
+   
+
+    
 
 def plot_infidelity_heatmaps(
     data_file,
