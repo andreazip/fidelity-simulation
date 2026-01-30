@@ -1,105 +1,110 @@
-Quantum Exchange Qubit Simulation
+# Quantum Exchange Qubit Simulation
 
 This repository contains Python scripts for simulating exchange qubits under various pulse schemes, noise models, and parameter sweeps. It allows automated generation of fidelities, infidelity heatmaps, and noise-dependent simulations.
 
-Contents
+## Contents
 
-run_experiments.py – Main script for running simulations and generating plots.
+- **run_experiments.py** – Main script for running simulations and generating plots.  
+- **experiment_utils.py** – Helper functions for experiment management, caching, folder structure, and noise simulations.  
+- **func_simEO.py** – Contains the physics simulation functions for exchange qubits.  
+- **plot.py** – Plotting functions for visualizing fidelities, infidelity heatmaps, and noise effects.  
+- **requirements.txt** – Python dependencies.
 
-experiment_utils.py – Helper functions for experiment management, caching, folder structure, and noise simulations.
+## Features
 
-func_simEO.py – Contains the physics simulation functions for exchange qubits.
+- **Fidelity simulations**  
+  Computes state and operator fidelities for different pulse types (square, linear, RC).  
 
-plot.py – Plotting functions for visualizing fidelities, infidelity heatmaps, and noise effects.
+- **Infidelity heatmaps**  
+  Sweeps pulse timing (`delta_t`) and voltage (`delta_V`) to generate heatmaps of infidelity.  
 
-Features
+- **Noise simulations**  
+  Supports:
+  - White noise  
+  - Pink/flicker noise  
+  - Timing jitter  
 
-Fidelity simulations
-Computes state and operator fidelities for different pulse types (square, linear, RC).
+- **Automatic folder and data management**  
+  - Each experiment is stored in a unique folder based on parameters.  
+  - No accidental overwriting.  
+  - All results (NPZ data + plots) are organized by physical parameters (`J`, `alpha`, `J_offset`) and a hash ID.  
 
-Infidelity heatmaps
-Sweeps pulse timing (delta_t) and voltage (delta_V) to generate heatmaps of infidelity.
+- **Plot-only mode**  
+  Allows generating plots from existing NPZ data without rerunning simulations.  
 
-Noise simulations
-Supports:
+## Setup
 
-White noise
+### Install dependencies
 
-Pink/flicker noise
+Using `requirements.txt`:
 
-Timing jitter
+```bash
+pip install -r requirements.txt
+```
 
-Automatic folder and data management
+Or manually:
 
-Each experiment is stored in a unique folder based on parameters.
-
-No accidental overwriting.
-
-All results (NPZ data + plots) are organized by physical parameters (J, alpha, J_offset) and a hash ID.
-
-Plot-only mode
-Allows generating plots from existing NPZ data without rerunning simulations.
-
-Setup
-
-Install requirements:
-
+```bash
 pip install numpy qutip matplotlib scipy tqdm
+```
 
+Ensure func_simEO.py and plot.py are in the same folder as run_experiments.py.
 
-Ensure func_simEO.py and plot.py are in the same folder.
-
-Set the base directory in run_experiments.py:
-
-BASE_DIR = Path("C:/Users/zipar/MEP/Results")
-
-Usage
-Run full experiment
-python run_experiments.py
-
-
-This will:
-
-Run fidelities for all pulse types.
-
-Compute infidelity heatmaps.
-
-Simulate noise and jitter effects.
-
-Generate all plots.
-
-Run plot-only mode
+## Set base directory
 
 Edit run_experiments.py:
 
-PLOT_ONLY = True
+```bash
+BASE_DIR = Path("C:/Users/zipar/MEP/Results")
+```
+### Usage
+## Run full experiment
 
+```bash
+python run_experiments.py
+```
+This will:
+
+- Run fidelities for all pulse types.
+
+- Compute infidelity heatmaps.
+
+- Simulate noise and jitter effects.
+
+- Generate all plots.
+
+## Run plot-only mode
+Edit run_experiments.py:
+
+``` Bash
+PLOT_ONLY = True
+```
 
 Then run:
 
+``` Bash
 python run_experiments.py
-
+```
 
 This will skip simulations and only generate plots from existing data.
 
-Enable/disable specific simulations
+## Enable/disable specific simulations
 
 Edit the RUN dictionary:
-
+ ``` Bash
 RUN = {
     "fidelities": True,
     "heatmaps": True,
     "jitter": True,
     "noise": True,
 }
-
-
+```
 Set False to skip a simulation type.
 
-Sweeping physical parameters
+## Sweeping physical parameters
+Modify or loop over the ExperimentConfig section:
 
-Modify the ExperimentConfig section:
-
+``` Bash
 cfg = ExperimentConfig(
     J=20e6,
     J_offset=10e3,
@@ -114,11 +119,12 @@ cfg = ExperimentConfig(
     T=60e-9,
     N=4000,
 )
-
+```
 
 You can run multiple experiments by changing J, alpha, J_offset, or pulse shapes. Each configuration will automatically create a separate folder to avoid overwriting results.
 
-Folder Structure
+## Folder Structure
+
 Results/
 └── J=20MHz/
     └── alpha=25/
@@ -132,22 +138,35 @@ Results/
                 └── Plots/
                     ├── Clean/
                     └── Noise/
+- Data/ – NPZ files storing simulation results.
 
+- Plots/ – Visualizations of fidelities, heatmaps, and noise effects.
 
-Data/ – NPZ files storing simulation results.
+### Notes
+- Use delta_t_list and delta_V_list to control resolution for infidelity heatmaps.
 
-Plots/ – Visualizations of fidelities, heatmaps, and noise effects.
+- iterations in noise simulations controls Monte Carlo averaging. Higher values increase accuracy but also runtime.
 
-Notes
+- plot_pulse in fidelities controls whether the pulse shapes are plotted.
 
-Use delta_t_list and delta_V_list to control resolution for infidelity heatmaps.
+- PLOT_ONLY = True allows generating plots from previously computed NPZ files without running simulations again.
 
-iterations in noise simulations controls Monte Carlo averaging. Higher values increase accuracy but also runtime.
+### Quick Start Example
+Run fidelities and plot-only for one configuration:
 
-plot_pulse in fidelities controls whether the pulse shapes are plotted.
+```python
+from experiment_utils import ExperimentConfig, experiment_dirs, run_clean_fidelities
+import plot
+from pathlib import Path
 
-References
+BASE_DIR = Path("C:/Users/zipar/MEP/Results")
 
-Exchange-only qubit simulations based on Qutip.
+cfg = ExperimentConfig(J=20e6, J_offset=10e3, alpha=25, theta1=0,
+                       theta2=np.pi - np.arctan(np.sqrt(8)), theta3=np.arctan(np.sqrt(8)),
+                       theta4=np.pi - np.arctan(np.sqrt(8)), t_rise=1e-9, t_fall=1e-9,
+                       tau=0.1e-9, T=60e-9, N=4000)
 
-Noise models: White, Pink, and Timing Jitter.
+dirs = experiment_dirs(BASE_DIR, cfg)
+fid_file = run_clean_fidelities(cfg, dirs, plot_pulse=True)
+plot.plot_infidelity_heatmaps(dirs["data"] / "heatmaps.npz", save_dir=dirs["clean"])
+```
