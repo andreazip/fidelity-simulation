@@ -19,7 +19,7 @@ J_offset = 10e3
 alpha = 25
 
 #define the desired rotation angle
-theta1 = 0
+theta1 = np.pi
 theta2 = np.pi - np.arctan(np.sqrt(8))
 theta3 = np.arctan(np.sqrt(8))
 theta4 = np.pi - np.arctan(np.sqrt(8))
@@ -30,8 +30,8 @@ t_fall = 1e-9
 tau = 0.1e-9
 
 # Simulation grid
-T = 60e-9
-N = 4000
+T = 80e-9
+N = 5000
 #dt = T/N 
 #fs = N/T
 
@@ -46,6 +46,8 @@ Joffset_list = [100e3, 10e3]
 #different noise strengrh depending on the value of alpha
 white_amps_dict = {25: np.linspace(0, 0.003, 10), 12.5: np.linspace(0, 0.003, 10)}
 pink_amps_dict = {25: np.linspace(0, 0.001, 10), 12.5: np.linspace(0, 0.001, 10)}
+#numebr of iterations (it is 10 for QPT average, and 10 for avergaing the QPT values)
+iterations = 10
 
 #Resolution
 deltat = 1 / (J * 770) #formula to get resolution for 3 pulses
@@ -161,7 +163,7 @@ if RUN["jitter"]:
 
             if not PLOT_ONLY:
                 print(f"[STATE {state_counter}] Starting jitter simulation for alpha={alpha_val}, Joff={Joff/1e3:.0f}kHz")
-                j_file = run_jitter(cfg_loop, dirs_loop, iterations=20)
+                j_file = run_jitter(cfg_loop, dirs_loop, iterations = iterations)
             else:
                 j_file = dirs_loop["data"] / f"jitter.npz"
 
@@ -190,10 +192,10 @@ if RUN["noise"]:
 
             if not PLOT_ONLY:
                 print(f"[STATE {state_counter}] Starting noise simulation for alpha={alpha_val}, Joff={Joff/1e3:.0f}kHz")
-                n_file = run_noise(cfg_loop, dirs_loop, white_amps_dict[alpha_val], pink_amps_dict[alpha_val], iterations=20)
+                n_file = run_noise(cfg_loop, dirs_loop, white_amps_dict[alpha_val], pink_amps_dict[alpha_val], iterations= iterations)
             else:
                 n_file = dirs_loop["data"] / f"noise.npz"
 
-            plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file, SAVE_DIR=dirs_loop["noise"])
+            plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset,  n_file, N, T, SAVE_DIR=dirs_loop["noise"])
             print(f"[STATE {state_counter}] Completed noise: alpha={alpha_val}, Joff={Joff/1e3:.0f}kHz")
             state_counter += 1

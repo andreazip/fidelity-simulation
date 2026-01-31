@@ -36,7 +36,7 @@ class ExperimentConfig:
     sigma_jitter: float = 0.0
 
 def experiment_id(cfg: ExperimentConfig) -> str:
-    s = json.dumps(asdict(cfg), sort_keys=True)
+    s = json.dumps(asdict(cfg), sort_keys=True) #convert dicitionary into string
     return hashlib.sha1(s.encode()).hexdigest()[:8]
 
 def experiment_dirs(base: Path, cfg: ExperimentConfig):
@@ -59,43 +59,55 @@ def save_config(cfg: ExperimentConfig, root: Path):
 
 # ---- Fidelities ----
 def run_clean_fidelities(cfg, dirs, plot_pulse=False):
-    file = dirs["data"] / "fidelities.npz"
+    file = dirs["data"] / "fidelities.txt"
     if file.exists():
         return file
 
-    results = {}
     V = np.log(cfg.J / cfg.J_offset) / (2 * cfg.alpha)
-    pulse_types = ['square','linear','RC']
+    pulse_types = ["square", "linear", "RC"]
 
-    for pulse in pulse_types:
-        sf, of, _, _, _ = EO.run_exchange_qubit_simulation(
-            J_offset=cfg.J_offset,
-            V1=V, V2=V,
-            theta1=cfg.theta1,
-            theta2=cfg.theta2,
-            theta3=cfg.theta3,
-            theta4=cfg.theta4,
-            alpha=cfg.alpha,
-            deltaV= cfg.deltaV,
-            deltat= cfg.deltat,
-            pulse_type=pulse,
-            t_rise=cfg.t_rise,
-            t_fall=cfg.t_fall,
-            tau=cfg.tau,
-            white_amp=cfg.white_amp,
-            pink_amp=cfg.pink_amp,
-            sigma_jitter=cfg.sigma_jitter,
-            plot_pulse=plot_pulse,
-            plot_bloch=False,
-            SAVE_DIR = dirs["clean"],
-            T=cfg.T,
-            N=cfg.N,
-        )
-        results[pulse] = (sf, of)
+    with open(file, "w") as f:
+        f.write("Clean fidelity results\n")
+        f.write("=" * 40 + "\n")
+        f.write(f"J        = {cfg.J:.3e} Hz\n")
+        f.write(f"J_offset = {cfg.J_offset:.3e} Hz\n")
+        f.write(f"alpha    = {cfg.alpha}\n")
+        f.write(f"deltaV   = {getattr(cfg, 'deltaV', 0)}\n")
+        f.write(f"deltat   = {getattr(cfg, 'deltat', 0)}\n")
+        f.write("\n")
 
-    np.savez(file, **results)
+        for pulse in pulse_types:
+            sf, of, _, _, _ = EO.run_exchange_qubit_simulation(
+                J_offset=cfg.J_offset,
+                V1=V,
+                V2=V,
+                theta1=cfg.theta1,
+                theta2=cfg.theta2,
+                theta3=cfg.theta3,
+                theta4=cfg.theta4,
+                alpha=cfg.alpha,
+                deltaV=cfg.deltaV,
+                deltat=cfg.deltat,
+                pulse_type=pulse,
+                t_rise=cfg.t_rise,
+                t_fall=cfg.t_fall,
+                tau=cfg.tau,
+                white_amp=cfg.white_amp,
+                pink_amp=cfg.pink_amp,
+                sigma_jitter=cfg.sigma_jitter,
+                plot_pulse=plot_pulse,
+                plot_bloch=False,
+                SAVE_DIR=dirs["clean"],
+                T=cfg.T,
+                N=cfg.N,
+            )
+
+            f.write(f"Pulse type: {pulse}\n")
+            f.write(f"  State fidelity     : {sf:.8e}\n")
+            f.write(f"  Operator fidelity : {of:.8e}\n")
+            f.write("\n")
+
     return file
-
 # ---- Heatmaps ----
 def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list):
     file = dirs["data"] / "heatmaps.npz"
