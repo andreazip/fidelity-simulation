@@ -108,6 +108,7 @@ def run_clean_fidelities(cfg, dirs, plot_pulse=False):
             f.write("\n")
 
     return file
+
 # ---- Heatmaps ----
 def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list):
     file = dirs["data"] / "heatmaps.npz"

@@ -11,7 +11,7 @@ RUN = {
     "jitter": True,
     "noise": True,
 }
-PLOT_ONLY = False
+PLOT_ONLY = True
 
 # Physics
 J = 20e6
@@ -30,8 +30,14 @@ t_fall = 1e-9
 tau = 0.1e-9
 
 # Simulation grid
+#Configuration fror y gate
 T = 80e-9
 N = 5000
+
+#configuration for x-gate
+# T = 60e-9
+# N = 4000
+
 #dt = T/N 
 #fs = N/T
 
@@ -167,7 +173,7 @@ if RUN["jitter"]:
             else:
                 j_file = dirs_loop["data"] / f"jitter.npz"
 
-            plot.plot_infidelity_vs_jitter(cfg_loop.alpha, cfg_loop.J_offset, j_file, SAVE_DIR=dirs_loop["noise"])
+            plot.plot_infidelity_vs_jitter(cfg_loop.alpha, cfg_loop.J_offset, N, deltat, j_file, SAVE_DIR=dirs_loop["noise"])
             print(f"[STATE {state_counter}] Completed jitter: alpha={alpha_val}, Joff={Joff/1e3:.0f}kHz")
             state_counter += 1
 
@@ -196,6 +202,6 @@ if RUN["noise"]:
             else:
                 n_file = dirs_loop["data"] / f"noise.npz"
 
-            plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset,  n_file, N, T, SAVE_DIR=dirs_loop["noise"])
+            plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset,  n_file, N, T, deltaV, SAVE_DIR=dirs_loop["noise"])
             print(f"[STATE {state_counter}] Completed noise: alpha={alpha_val}, Joff={Joff/1e3:.0f}kHz")
             state_counter += 1

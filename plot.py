@@ -8,20 +8,35 @@ from matplotlib.colors import LogNorm
 from pathlib import Path
 import re
 
+
 def title_to_filename(title, ext="png"):
+    """
+    Convert a title into a safe filename.
+    Example: "PSD at threshold" -> "psd_at_threshold.png"
+    """
     clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
     return clean.lower().strip('_') + f".{ext}"
 
+
 def save_figure(title, folder="figures", ext="png"):
+    """
+    Save the current matplotlib figure.
+
+    - Filename: lowercase, underscores
+    - Plot title: spaces instead of underscores, capitalize first letters
+    """
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
 
-    plt.title(title)
+    # Convert underscores to spaces and capitalize words for display
+    #display_title = title.replace('_', ' ').title()
+    #plt.title(display_title)
+
+    # Save figure with clean filename
     plt.savefig(folder / title_to_filename(title, ext),
                 dpi=300, bbox_inches="tight")
 
     plt.close()
-
 
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
 
@@ -81,6 +96,7 @@ def plot_infidelity_vs_noise(
     data_file,
     N,
     T,
+    dV,
     SAVE_DIR,
     floor_value=1e-6,
 ):
@@ -106,7 +122,24 @@ def plot_infidelity_vs_noise(
 
     # ================= RMS → PHYSICAL METRICS =================
     N0_array = white_amps**2 / (fs / 2)
-    S1Hz_array = pink_amps**2 / np.log(f[-1] / f[1])
+
+    P_pink = np.zeros(len(pink_amps))
+    Sp_array = np.zeros((100, N//2+1))
+
+    for i, rms_pink in enumerate(pink_amps):
+        for j in range(100):
+            x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
+            x_pink *= rms_pink
+
+            Xp = np.fft.rfft(x_pink)
+            Sp_array[j] =  2 / (N * fs) * np.abs(Xp) ** 2
+
+        # Average PSD over realizations
+        #calculate power
+        df = f[1]-f[0]
+        P_pink[i] = np.sum(np.mean(Sp_array)) * df 
+    
+    S1Hz_array = P_pink / np.log(f[-1] / f[1])
 
     # ================= LOOP OVER METRICS =================
     for metric in metrics:
@@ -226,16 +259,22 @@ def plot_infidelity_vs_noise(
 
         # ================= PSD AT THRESHOLD =================
         x_white, _ = noise_psd(T, N, psd_func=white_psd)
-        x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
-
-        x_white *= rms_white_thr
-        x_pink *= rms_pink_thr
-
+    
+        x_white *= rms_white_thr            
         Xw = np.fft.rfft(x_white)
-        Xp = np.fft.rfft(x_pink)
-
         Sw = 2 / (N * fs) * np.abs(Xw) ** 2
-        Sp = 2 / (N * fs) * np.abs(Xp) ** 2
+
+        Sp_array = np.zeros((100, N//2+1))
+
+        for i in range(100):
+            x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
+            x_pink *= rms_pink_thr
+
+            Xp = np.fft.rfft(x_pink)
+            Sp_array[i] =  2 / (N * fs) * np.abs(Xp) ** 2
+
+        # Average PSD over realizations
+        Sp = np.mean(Sp_array, axis=0)
 
         plt.loglog(f[1:-1], Sw[1:-1], label="White noise")
         plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise")
@@ -252,6 +291,52 @@ def plot_infidelity_vs_noise(
         save_figure(f"PSD_threshold_{titles[metric]}", save_dir)
         plt.show()
 
+
+        # Plot histogram / distribution
+        plt.figure(figsize=(16,9))
+        plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
+        plt.hist(x_white*1e3, bins=50, alpha=0.3, label="White noise")
+
+        # Overlay system resolution
+        resolution = dV
+        plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
+        plt.axvline(-resolution*1e3, color='k', linestyle='--')
+
+        # 3-sigma lines
+        plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
+        plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
+
+        plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\sigma$ White = {rms_white_thr*1e3:.2f} mV")
+        plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
+
+        plt.xlabel("Noise value [mV]")
+        plt.ylabel("Counts")
+        plt.title("Noise distributions vs system resolution")
+        plt.legend()
+        save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
+        plt.show()
+
+        # Plot histogram / distribution
+        plt.figure(figsize=(16,9))
+        plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
+
+        # Overlay system resolution
+        resolution = dV
+        plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
+        plt.axvline(-resolution*1e3, color='k', linestyle='--')
+
+        # 3-sigma lines
+        plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
+        plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
+
+
+        plt.xlabel("Noise value [mV]")
+        plt.ylabel("Counts")
+        plt.title("Noise distributions vs system resolution")
+        plt.legend()
+        save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
+        plt.show()
+
         # ================= WRITE OUTPUT FILE =================
         out_file = save_dir / "noise_threshold_info.txt"
         with open(out_file, "w") as ftxt:
@@ -266,7 +351,9 @@ def plot_infidelity_vs_noise(
 
 
 
-def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
+
+
+def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
     """
     Load RMS timing jitter simulation results and plot infidelity vs jitter for:
     - evolution fidelity
@@ -330,9 +417,36 @@ def plot_infidelity_vs_jitter(alpha, Joffset, data_file, SAVE_DIR=SAVE_DIR, floo
         save_figure(title, save_dir)
         plt.show()
 
-   
+    threshold = 1e-4
+    metric = "_qpt"  # evolution fidelity
 
-    
+    square_infidelity = np.array(infidelity_dicts[metric]["square"])
+    square_std = np.array(std_dicts[metric]["square"])
+
+    idx_jitter = np.argmax(square_infidelity+3*square_std> threshold)
+
+    jitter_rms = sigma_jitters[idx_jitter]
+    jitter_noise  = np.random.normal(0, jitter_rms, N) *1e12
+
+    # Plot histogram / distribution
+    plt.figure(figsize=(16,9))
+    plt.hist(jitter_noise, bins=50, alpha=0.6, label="Jitter noise")
+
+    # Overlay system resolution
+    resolution_t = dT
+    plt.axvline(resolution_t*1e12, color='k', linestyle='--', label=f"Resolution = {resolution_t*1e12:.2f} ps")
+    plt.axvline(-resolution_t*1e12, color='k', linestyle='--')
+
+    plt.axvline(jitter_rms*1e12, color='g', linestyle='-.', label=f"$\sigma$ Jitter = {jitter_rms *1e12:.2f} ps")
+    plt.axvline(-jitter_rms*1e12, color='g', linestyle='-.')
+
+    plt.xlabel("Noise value [ps]")
+    plt.ylabel("Counts")
+    plt.title("Noise distributions vs system resolution")
+    plt.legend()
+    save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12:.2f}$ ps", save_dir)
+    plt.show()
+
 
 def plot_infidelity_heatmaps(
     data_file,
