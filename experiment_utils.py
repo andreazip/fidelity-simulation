@@ -5,6 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 import func_simEO as EO
 from tqdm import tqdm
+from gate_library import GATE_LIBRARY, get_gate_angles
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -35,13 +36,24 @@ class ExperimentConfig:
     pink_amp: float = 0.0
     sigma_jitter: float = 0.0
 
+@dataclass
+class Resolution:
+    time: float
+    voltage: float
+
+@dataclass
+class PulseResolutions:
+    square: Resolution
+    linear: Resolution
+    RC: Resolution
+
 def experiment_id(cfg: ExperimentConfig) -> str:
     s = json.dumps(asdict(cfg), sort_keys=True) #convert dicitionary into string
     return hashlib.sha1(s.encode()).hexdigest()[:8]
 
-def experiment_dirs(base: Path, cfg: ExperimentConfig):
+def experiment_dirs(base: Path, cfg: ExperimentConfig, GATE = "X"):
     cfg_id = experiment_id(cfg)
-    root = base / f"J={cfg.J/1e6:.0f}MHz" / f"alpha={cfg.alpha}" / f"Joff={cfg.J_offset/1e3:.0f}kHz" / f"cfg_{cfg_id}"
+    root = base /"gates"/ GATE/ f"J={cfg.J/1e6:.0f}MHz" / f"alpha={cfg.alpha}" / f"Joff={cfg.J_offset/1e3:.0f}kHz" / f"cfg_{cfg_id}"
     dirs = {
         "root": root,
         "data": root / "Data",
@@ -151,6 +163,191 @@ def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list):
 
     np.savez(file, infidelity_maps=maps, delta_t_list=delta_t_list, delta_V_list=delta_V_list)
     return file
+
+def run_test_gates_heatmaps(
+    BASE_DIR,
+    cfg_base,
+    delta_t_list,
+    delta_V_list,
+):
+    """
+    Run heatmap-style infidelity sweeps for all gates in GATE_LIBRARY.
+
+    Only the following cuts are computed:
+      - delta_V = 0, sweep delta_t
+      - delta_t = 0, sweep delta_V
+
+    Results stored in:
+        BASE_DIR/test_gates/<gate>/cfg_xxxxx/{Data,Plots}
+
+    Automatically skips gates already simulated.
+    """
+
+    test_root = BASE_DIR / "test_gates"
+    test_root.mkdir(exist_ok=True)
+
+    V = np.log(cfg_base.J / cfg_base.J_offset) / (2 * cfg_base.alpha)
+    pulse_types = ["square", "linear", "RC"]
+
+    outfile = test_root / f"gate_thresholds.txt" 
+    threshold = 1e-4
+
+    RESOLUTION_LIBRARY = {
+    key: PulseResolutions(
+        square=Resolution(time=0.0, voltage=0.0),
+        linear=Resolution(time=0.0, voltage=0.0),
+        RC=Resolution(time=0.0, voltage=0.0),
+    )
+    for key in GATE_LIBRARY
+    }
+
+
+    with open(outfile, "w") as f: 
+        f.write(f"# Gate threshold test\n") 
+        f.write(f"# Infidelity thr : {threshold:.1e}\n\n")
+
+        for gate_name in tqdm(GATE_LIBRARY.keys(), leave=False):
+
+            f.write(f"GATE {gate_name}\n") 
+            f.write("-" * 50 + "\n")
+            
+            angles = get_gate_angles(gate_name)
+
+            cfg = ExperimentConfig(
+                J=cfg_base.J,
+                J_offset=cfg_base.J_offset,
+                alpha=cfg_base.alpha,
+                theta1=angles.theta1,
+                theta2=angles.theta2,
+                theta3=angles.theta3,
+                theta4=angles.theta4,
+                t_rise=cfg_base.t_rise,
+                t_fall=cfg_base.t_fall,
+                tau=cfg_base.tau,
+                T=cfg_base.T,
+                N=cfg_base.N,
+                deltaV=0.0,
+                deltat=0.0,
+            )
+
+            dirs = experiment_dirs(test_root, cfg)
+
+            heatmap_file = dirs["data"] / "heatmaps_1D.npz"
+            if heatmap_file.exists():
+                print(f"[SKIP] Heatmaps already exist for gate {gate_name}")
+                continue
+
+            inf_maps_dt = {}
+            inf_maps_dV = {}
+
+            # --------------------------------------------------
+            # Δt sweep (ΔV = 0)
+            # --------------------------------------------------
+            print(f"[GATE {gate_name}] Simulation for delta V = 0")
+            for pulse in pulse_types:
+                inf_list = np.zeros(len(delta_t_list))
+                found = False
+
+                for i, dt in enumerate(delta_t_list):
+                    _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
+                            J_offset=cfg.J_offset,
+                            V1=V,
+                            V2=V,
+                            theta1=cfg.theta1,
+                            theta2=cfg.theta2,
+                            theta3=cfg.theta3,
+                            theta4=cfg.theta4,
+                            alpha=cfg.alpha,
+                            deltaV=0.0,
+                            deltat=dt,
+                            pulse_type=pulse,
+                            t_rise=cfg.t_rise,
+                            t_fall=cfg.t_fall,
+                            tau=cfg.tau,
+                            white_amp=0,
+                            pink_amp=0,
+                            sigma_jitter=0,
+                            plot_pulse=False,
+                            plot_bloch=False,
+                            T=cfg.T,
+                            N=cfg.N,
+                        )
+                    inf_list[i] = 1 - fid
+                    if inf_list[i] > threshold:
+                        scale = 1e12 
+                        unit = "ps"
+                        f.write( f"First failure at delta T = " f"{dt * scale:.3f} {unit} for {pulse}\n" ) 
+                        f.write( f"Infidelity : {inf_list[i]:.6e}\n\n" ) 
+                        getattr(RESOLUTION_LIBRARY[gate_name], pulse).time = dt
+                        print(f"[GATE {gate_name}] Found simulation for delta V = 0")
+                        found = True 
+                        break 
+                    
+                if not found: 
+                    f.write("No failure in sweep range\n\n")
+                    print(f"[GATE {gate_name}] Not found simulation for delta V = 0")
+                        
+                inf_maps_dt[pulse] = inf_list
+
+            # --------------------------------------------------
+            # ΔV sweep (Δt = 0)
+            # --------------------------------------------------
+            print(f"[GATE {gate_name}] Simulation for delta t = 0")
+
+            for pulse in pulse_types:
+                inf_list = np.zeros(len(delta_V_list))
+                found = False
+
+                for i, dV in enumerate(delta_V_list):
+                    _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
+                            J_offset=cfg.J_offset,
+                            V1=V,
+                            V2=V,
+                            theta1=cfg.theta1,
+                            theta2=cfg.theta2,
+                            theta3=cfg.theta3,
+                            theta4=cfg.theta4,
+                            alpha=cfg.alpha,
+                            deltaV=dV,
+                            deltat=0.0,
+                            pulse_type=pulse,
+                            t_rise=cfg.t_rise,
+                            t_fall=cfg.t_fall,
+                            tau=cfg.tau,
+                            white_amp=0,
+                            pink_amp=0,
+                            sigma_jitter=0,
+                            plot_pulse=False,
+                            plot_bloch=False,
+                            T=cfg.T,
+                            N=cfg.N,
+                        )
+                    inf_list[i] = 1 - fid
+                    if inf_list[i] > threshold:
+                        scale = 1e6
+                        unit = "uV"
+                        f.write( f"First failure at delta V = " f"{dV * scale:.3f} {unit} for {pulse}\n" ) 
+                        f.write( f"Infidelity : {inf_list[i]:.6e}\n\n" ) 
+                        print(f"[GATE {gate_name}] Found simulation for delta t = 0")
+                        found = True 
+                        getattr(RESOLUTION_LIBRARY[gate_name], pulse).voltage = dV
+                        break 
+                    
+                if not found: 
+                    f.write("No failure in sweep range\n\n")
+                    print(f"[GATE {gate_name}] Not found simulation for delta t = 0")
+                        
+                inf_maps_dV[pulse] = inf_list
+
+            np.savez(
+                    heatmap_file,
+                    infidelity_dt=inf_maps_dt,
+                    infidelity_dV=inf_maps_dV,
+                    delta_t_list=delta_t_list,
+                    delta_V_list=delta_V_list,
+                )
+
+        print(f"[DONE] Stored heatmaps for gate {gate_name}")
 
 # ---- Jitter noise ----
 def run_jitter(cfg, dirs, iterations=50):

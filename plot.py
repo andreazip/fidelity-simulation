@@ -97,6 +97,7 @@ def plot_infidelity_vs_noise(
     N,
     T,
     dV,
+    GATE,
     SAVE_DIR,
     floor_value=1e-6,
 ):
@@ -132,13 +133,16 @@ def plot_infidelity_vs_noise(
             x_pink *= rms_pink
 
             Xp = np.fft.rfft(x_pink)
-            Sp_array[j] =  2 / (N * fs) * np.abs(Xp) ** 2
+            Sp = (2 / (N * fs)) * np.abs(Xp)**2
 
-        # Average PSD over realizations
-        #calculate power
-        df = f[1]-f[0]
-        P_pink[i] = np.sum(np.mean(Sp_array)) * df 
-    
+            Sp_array[j] = Sp
+
+        Sp_mean = np.mean(Sp_array, axis=0)
+
+        df = f[1] - f[0]
+
+        P_pink[i] = np.sum(Sp_mean) * df
+
     S1Hz_array = P_pink / np.log(f[-1] / f[1])
 
     # ================= LOOP OVER METRICS =================
@@ -201,7 +205,7 @@ def plot_infidelity_vs_noise(
         plt.xlabel(r"$N_0\;[V^2/\mathrm{Hz}]$")
         plt.ylabel("Infidelity")
         plt.title(
-            f"White Noise – {titles[metric]}\n"
+            f"Gate: {GATE} - White Noise – {titles[metric]}\n"
             f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
         )
         plt.legend()
@@ -235,7 +239,7 @@ def plot_infidelity_vs_noise(
         plt.xlabel(r"$S(1\,\mathrm{Hz})\;[V^2/\mathrm{Hz}]$")
         plt.ylabel("Infidelity")
         plt.title(
-            f"Flicker Noise – {titles[metric]}\n"
+            f"Gate : {GATE} - Flicker Noise – {titles[metric]}\n"
             f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
         )
         plt.legend()
@@ -245,11 +249,14 @@ def plot_infidelity_vs_noise(
         plt.show()
 
         # ================= THRESHOLD RMS (SQUARE ONLY) =================
-        square_white = inf_white["square"]
-        square_pink = inf_pink["square"]
+        RC_white = inf_white["RC"]
+        RC_pink = inf_pink["RC"]
 
-        idx_white = np.argmax(square_white > threshold)
-        idx_pink = np.argmax(square_pink > threshold)
+        RC_std_white = std_white["RC"]
+        RC_std_pink =std_pink["RC"]
+
+        idx_white = np.argmax(RC_white + 3*RC_std_white > threshold)
+        idx_pink = np.argmax(RC_pink + 3*RC_std_pink > threshold)
 
         rms_white_thr = white_amps[idx_white]
         rms_pink_thr = pink_amps[idx_pink]
@@ -281,7 +288,7 @@ def plot_infidelity_vs_noise(
         plt.xlabel("Frequency [Hz]")
         plt.ylabel(r"PSD [$V^2$/Hz]")
         plt.title(
-            f"PSD at threshold – {titles[metric]}\n"
+            f"Gate: {GATE} - PSD at threshold – {titles[metric]}\n"
             f"white RMS={rms_white_thr*1e3:.3f} mV, "
             f"pink RMS={rms_pink_thr*1e3:.3f} mV"
         )
@@ -311,7 +318,7 @@ def plot_infidelity_vs_noise(
 
         plt.xlabel("Noise value [mV]")
         plt.ylabel("Counts")
-        plt.title("Noise distributions vs system resolution")
+        plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
         plt.legend()
         save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
         plt.show()
@@ -332,7 +339,7 @@ def plot_infidelity_vs_noise(
 
         plt.xlabel("Noise value [mV]")
         plt.ylabel("Counts")
-        plt.title("Noise distributions vs system resolution")
+        plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
         plt.legend()
         save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
         plt.show()
@@ -340,7 +347,7 @@ def plot_infidelity_vs_noise(
         # ================= WRITE OUTPUT FILE =================
         out_file = save_dir / "noise_threshold_info.txt"
         with open(out_file, "w") as ftxt:
-            ftxt.write(f"{titles[metric]}\n")
+            ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
             ftxt.write("-" * 40 + "\n")
             ftxt.write("White noise:\n")
             ftxt.write(f"  RMS threshold = {rms_white_thr:.3e} V\n")
@@ -353,7 +360,7 @@ def plot_infidelity_vs_noise(
 
 
 
-def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
+def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, GATE, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
     """
     Load RMS timing jitter simulation results and plot infidelity vs jitter for:
     - evolution fidelity
@@ -401,7 +408,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, data_file, SAVE_DIR=SAVE_DI
             plt.plot(sigma_jitters*1e12, y, label=f"{pulse}", color=colors[pulse], marker='o')
             plt.fill_between(sigma_jitters*1e12, y, y + 3*delta, color='orange', alpha=0.1)
 
-        title = f"Infidelity vs Jitter - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
+        title = f"Gate: {GATE} - Infidelity vs Jitter - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
 
         save_dir = Path(SAVE_DIR) / titles[metric]
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -420,10 +427,10 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, data_file, SAVE_DIR=SAVE_DI
     threshold = 1e-4
     metric = "_qpt"  # evolution fidelity
 
-    square_infidelity = np.array(infidelity_dicts[metric]["square"])
-    square_std = np.array(std_dicts[metric]["square"])
+    RC_infidelity = np.array(infidelity_dicts[metric]["RC"])
+    RC_std = np.array(std_dicts[metric]["RC"])
 
-    idx_jitter = np.argmax(square_infidelity+3*square_std> threshold)
+    idx_jitter = np.argmax(RC_infidelity+3*RC_std > threshold)
 
     jitter_rms = sigma_jitters[idx_jitter]
     jitter_noise  = np.random.normal(0, jitter_rms, N) *1e12
@@ -442,7 +449,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, data_file, SAVE_DIR=SAVE_DI
 
     plt.xlabel("Noise value [ps]")
     plt.ylabel("Counts")
-    plt.title("Noise distributions vs system resolution")
+    plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
     plt.legend()
     save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12:.2f}$ ps", save_dir)
     plt.show()

@@ -272,6 +272,8 @@ for fs in fs_list:
     f"S(f) = K/f with K = {K_flicker*1e9:.3e} nV^2\n"
     f"S(1 Hz) = {K_flicker*1e9:.3e} nV^2/Hz\n"
     f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker)*1e6:.3e} uV/sqrt(Hz)\n"
+
+    
     )
 
 plot_delta_theta(0, 0.001, white = False, flicker = True, N = 4000, T= 60e-9, iterations= 100)

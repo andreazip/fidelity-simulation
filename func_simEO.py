@@ -865,7 +865,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
     print(f"Simulation completed. Results saved to '{output_file}'")
 
 def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, tau,pulse_types=['square','linear','RC'],
-                                sigma_jitters=np.linspace(0, 100e-12, 10),
+                                sigma_jitters=np.linspace(0, 150e-12, 10),
                                 iterations=10,
                                 alpha=50,
                                 J_offset=10e3,
