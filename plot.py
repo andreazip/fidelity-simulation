@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm  
 from pathlib import Path
 import re
+from gate_library import GATE_LIBRARY, get_gate_angles
 
 
 def title_to_filename(title, ext="png"):
@@ -97,12 +98,36 @@ def plot_infidelity_vs_noise(
     N,
     T,
     dV,
+    J, 
     GATE,
     SAVE_DIR,
     floor_value=1e-6,
 ):
     fs = N / T
     threshold = 1e-4
+
+    angles = get_gate_angles(GATE)
+    theta = np.zeros(3)
+    theta[0] = angles.theta1
+    if theta[0] == 0:
+        theta[0] = angles.theta2
+        theta[1] = angles.theta3
+        theta[2] = angles.theta4
+    else:
+        theta[1] = angles.theta2
+        theta[2] = angles.theta3
+    
+    theta_min = np.min(theta)
+    theta_avg = np.mean(theta)
+    print(theta_min)
+
+    print(theta_avg)
+
+    print(theta)
+
+    f_cutoff = J*2*np.pi/theta_min
+    print(f_cutoff)
+
 
     # ================= LOAD DATA =================
     data = np.load(data_file, allow_pickle=True)
@@ -180,6 +205,13 @@ def plot_infidelity_vs_noise(
             for pulse in pulse_types
         }
 
+        #analuytical caluclation
+        theta_avg = np.mean(theta)
+
+
+        inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*N0_array*f_cutoff
+
+
         # ================= WHITE NOISE PLOT =================
         for pulse in pulse_types:
             y = inf_white[pulse]
@@ -192,12 +224,23 @@ def plot_infidelity_vs_noise(
                 color=colors[pulse],
                 label=pulse,
             )
+
+            
             plt.fill_between(
                 N0_array,
                 y,
                 y + 3 * dy,
                 color=colors[pulse],
                 alpha=0.15,
+            )
+
+        plt.plot(
+                N0_array,
+                inF,
+                marker="x",
+                linestyle="--",
+                color="black",
+                label="Ideal infidelity",
             )
 
         plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
@@ -214,6 +257,8 @@ def plot_infidelity_vs_noise(
         save_figure(f"white_noise_{titles[metric]}", save_dir)
         plt.show()
 
+        inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
+
         # ================= PINK NOISE PLOT =================
         for pulse in pulse_types:
             y = inf_pink[pulse]
@@ -226,6 +271,8 @@ def plot_infidelity_vs_noise(
                 color=colors[pulse],
                 label=pulse,
             )
+
+           
             plt.fill_between(
                 S1Hz_array,
                 y,
@@ -234,6 +281,14 @@ def plot_infidelity_vs_noise(
                 alpha=0.15,
             )
 
+        plt.plot(
+                S1Hz_array,
+                inF,
+                marker="x",
+                linestyle="--",
+                color="black",
+                label="Ideal infidelity",
+            )
         plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
         plt.yscale("log")
         plt.xlabel(r"$S(1\,\mathrm{Hz})\;[V^2/\mathrm{Hz}]$")
@@ -360,7 +415,7 @@ def plot_infidelity_vs_noise(
 
 
 
-def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, GATE, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
+def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
     """
     Load RMS timing jitter simulation results and plot infidelity vs jitter for:
     - evolution fidelity
@@ -376,7 +431,14 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, GATE, data_file, SAVE_DIR=S
     floor_value : float
         Minimum value for clipping infidelities (useful for log plots).
     """
+    angles = get_gate_angles(GATE)
+    theta1 = angles.theta1
+    if theta1 == 0:
+        theta2 = angles.theta3
+    else:
+        theta2 = angles.theta2
     
+
     # Load data
     data = np.load(data_file, allow_pickle=True)
     pulse_types = data["pulse_types"]
@@ -400,6 +462,10 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, GATE, data_file, SAVE_DIR=S
         "_qpt": "QPT fidelity"
     }
 
+    #Formula for infidelity depending on rms value of jitter
+    inF = np.sqrt(2)*(4+3*np.cos(theta2/2)**2)*(np.pi*sigma_jitters*J)**2
+
+
     for metric in metrics:
         plt.figure(figsize=(16,9))
         for pulse in pulse_types:
@@ -408,6 +474,8 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, GATE, data_file, SAVE_DIR=S
             plt.plot(sigma_jitters*1e12, y, label=f"{pulse}", color=colors[pulse], marker='o')
             plt.fill_between(sigma_jitters*1e12, y, y + 3*delta, color='orange', alpha=0.1)
 
+        plt.plot(sigma_jitters*1e12, inF, label="Ideal infidelity", color="black", marker='x', linestyle = '--')
+           
         title = f"Gate: {GATE} - Infidelity vs Jitter - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
 
         save_dir = Path(SAVE_DIR) / titles[metric]
