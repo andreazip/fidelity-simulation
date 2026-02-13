@@ -10,14 +10,14 @@ from gate_library import get_gate_angles
 RUN = {
     "fidelities": True,
     "heatmaps": True,
-    "heatmaps_all":False,
+    "heatmaps_all": False,
     "jitter": True,
     "noise": True,
 }
-PLOT_ONLY = True
+PLOT_ONLY = False
 
 # Physics
-J = 20e6
+J = 10e6
 J_offset = 10e3
 alpha = 25
 
@@ -54,14 +54,21 @@ tau = 0.1e-9
 # deltat = 1 / (J * 770) #formula to get resolution for 3 pulses
 # deltaV = 1 / ((6250/51)*(np.pi-np.arctan(8))*2*alpha) #formula to get resolution in voltage for 4 pulses
 
-#configuration to run them all
-T = 120e-9
-N = 8000
+#configuration to run them alFalse
+# T = 120e-9
+# N = 8000
+
+T = 240e-9
+N = 16000
+
 #dt = T/N 
 #fs = N/T
 
 #for SXH
-deltat = 75e-12
+# deltat = 75e-12
+# deltaV = 50e-6 
+
+deltat = 150e-12
 deltaV = 50e-6 
 
 # Sweep
@@ -167,7 +174,7 @@ if RUN["heatmaps"] and not PLOT_ONLY:
     print(f"[STATE {state_counter}] Completed heatmaps")
     state_counter += 1
 
-delta_t_list = np.linspace(0, 200e-12, 25)
+delta_t_list = np.linspace(0, 20e6/J *200e-12, 25)
 delta_V_list = np.linspace(0, 0.4e-3, 25)
 
 if RUN["heatmaps_all"] and not PLOT_ONLY:

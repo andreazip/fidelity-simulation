@@ -119,15 +119,9 @@ def plot_infidelity_vs_noise(
     
     theta_min = np.min(theta)
     theta_avg = np.mean(theta)
-    print(theta_min)
-
-    print(theta_avg)
-
-    print(theta)
+    
 
     f_cutoff = J*2*np.pi/theta_min
-    print(f_cutoff)
-
 
     # ================= LOAD DATA =================
     data = np.load(data_file, allow_pickle=True)

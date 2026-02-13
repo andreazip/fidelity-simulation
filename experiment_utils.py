@@ -189,7 +189,7 @@ def run_test_gates_heatmaps(
     V = np.log(cfg_base.J / cfg_base.J_offset) / (2 * cfg_base.alpha)
     pulse_types = ["square", "linear", "RC"]
 
-    outfile = test_root / f"gate_thresholds.txt" 
+    outfile =test_root/ f"gate_thresholds_J={cfg_base.J/1e6:.0f}MHz.txt" 
     threshold = 1e-4
 
     RESOLUTION_LIBRARY = {
@@ -230,7 +230,7 @@ def run_test_gates_heatmaps(
                 deltat=0.0,
             )
 
-            dirs = experiment_dirs(test_root, cfg)
+            dirs = experiment_dirs(test_root, cfg, gate_name)
 
             heatmap_file = dirs["data"] / "heatmaps_1D.npz"
             if heatmap_file.exists():
