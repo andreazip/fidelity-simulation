@@ -14,6 +14,17 @@ class GateAngles:
 
 
 # =========================
+# Default per-gate settings
+# =========================
+
+@dataclass(frozen=True)
+class GateDefaults:
+    deltat: float | None = None
+    deltaV: float | None = None
+    T: float | None = None
+
+
+# =========================
 # Fundamental angles (Table S1)
 # =========================
 
@@ -202,6 +213,15 @@ GATE_LIBRARY = {
     ),
 }
 
+# Recommended resolution/time per gate (optional)
+# Values provided for commonly used gates; others default to None.
+GATE_DEFAULTS: dict[str, GateDefaults] = {
+    # Based on current experiments
+    "Y": GateDefaults(deltat=67e-12, deltaV=83e-6, T=80e-9),
+    "X": GateDefaults(deltat=75e-12, deltaV=100e-6, T=60e-9),
+    "SXH": GateDefaults(deltat=75e-12, deltaV=50e-6, T=120e-9),
+}
+
 def get_gate_angles(gate: str) -> GateAngles:
     try:
         return GATE_LIBRARY[gate]
@@ -209,3 +229,11 @@ def get_gate_angles(gate: str) -> GateAngles:
         raise ValueError(
             f"Unknown gate '{gate}'. Available gates:\n{list(GATE_LIBRARY.keys())}"
         )
+
+
+def get_gate_defaults(gate: str) -> GateDefaults:
+    """Return recommended `deltat`, `deltaV`, and `T` for a gate if available.
+
+    If a gate has no defaults defined, returns a `GateDefaults` with `None` values.
+    """
+    return GATE_DEFAULTS.get(gate, GateDefaults())

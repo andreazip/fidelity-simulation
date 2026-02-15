@@ -2,12 +2,11 @@ import numpy as np
 import qutip as qt
 import matplotlib.pyplot as plt
 from functools import partial
-from qutip import basis, sesolve, sigmax, sigmay, sigmaz
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm  
 from pathlib import Path
 import re
-from gate_library import GATE_LIBRARY, get_gate_angles
+from gate_library import  get_gate_angles
 
 
 def title_to_filename(title, ext="png"):
@@ -129,7 +128,15 @@ def plot_infidelity_vs_noise(
     white_amps = np.array(data["white_amps"])
     pink_amps = np.array(data["pink_amps"])
 
-    metrics = ["", "_state", "_qpt"]
+    # Detect available metrics dynamically (supports partial datasets)
+    keys = set(data.keys())
+    metrics = []
+    if ("infidelity_white" in keys) or ("infidelity_pink" in keys):
+        metrics.append("")
+    if ("infidelity_white_state" in keys) or ("infidelity_pink_state" in keys):
+        metrics.append("_state")
+    if ("infidelity_white_qpt" in keys) or ("infidelity_pink_qpt" in keys):
+        metrics.append("_qpt")
     titles = {
         "": "evolution fidelity",
         "_state": "state fidelity",
@@ -169,35 +176,33 @@ def plot_infidelity_vs_noise(
         save_dir = Path(SAVE_DIR) / titles[metric]
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        # Load infidelities and std
-        inf_white = {
-            pulse: np.clip(
-                data[f"infidelity_white{metric}"].item()[pulse],
-                floor_value,
-                None,
-            )
-            for pulse in pulse_types
-        }
-        inf_pink = {
-            pulse: np.clip(
-                data[f"infidelity_pink{metric}"].item()[pulse],
-                floor_value,
-                None,
-            )
-            for pulse in pulse_types
-        }
-        std_white = {
-            pulse: np.abs(
-                data[f"infidelity_white_std{metric}"].item()[pulse]
-            )
-            for pulse in pulse_types
-        }
-        std_pink = {
-            pulse: np.abs(
-                data[f"infidelity_pink_std{metric}"].item()[pulse]
-            )
-            for pulse in pulse_types
-        }
+        # Load infidelities and std based on metric (conditionally)
+        inf_white = None
+        std_white = None
+        inf_pink = None
+        std_pink = None
+
+        if metric == "":
+            if "infidelity_white" in keys:
+                inf_white = {pulse: np.clip(data["infidelity_white"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_white = {pulse: np.abs(data["infidelity_white_std"].item()[pulse]) for pulse in pulse_types}
+            if "infidelity_pink" in keys:
+                inf_pink = {pulse: np.clip(data["infidelity_pink"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_pink = {pulse: np.abs(data["infidelity_pink_std"].item()[pulse]) for pulse in pulse_types}
+        elif metric == "_state":
+            if "infidelity_white_state" in keys:
+                inf_white = {pulse: np.clip(data["infidelity_white_state"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_white = {pulse: np.abs(data["infidelity_white_std_state"].item()[pulse]) for pulse in pulse_types}
+            if "infidelity_pink_state" in keys:
+                inf_pink = {pulse: np.clip(data["infidelity_pink_state"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_pink = {pulse: np.abs(data["infidelity_pink_std_state"].item()[pulse]) for pulse in pulse_types}
+        elif metric == "_qpt":
+            if "infidelity_white_qpt" in keys:
+                inf_white = {pulse: np.clip(data["infidelity_white_qpt"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_white = {pulse: np.abs(data["infidelity_white_std_qpt"].item()[pulse]) for pulse in pulse_types}
+            if "infidelity_pink_qpt" in keys:
+                inf_pink = {pulse: np.clip(data["infidelity_pink_qpt"].item()[pulse], floor_value, None) for pulse in pulse_types}
+                std_pink = {pulse: np.abs(data["infidelity_pink_std_qpt"].item()[pulse]) for pulse in pulse_types}
 
         #analuytical caluclation
         theta_avg = np.mean(theta)
@@ -207,203 +212,281 @@ def plot_infidelity_vs_noise(
 
 
         # ================= WHITE NOISE PLOT =================
-        for pulse in pulse_types:
-            y = inf_white[pulse]
-            dy = std_white[pulse]
+        if (inf_white is not None) and (white_amps.size > 0):
+            for pulse in pulse_types:
+                y = inf_white[pulse]
+                dy = std_white[pulse]
+
+                plt.plot(
+                    N0_array,
+                    y,
+                    marker="o",
+                    color=colors[pulse],
+                    label=pulse,
+                )
+
+                plt.fill_between(
+                    N0_array,
+                    y,
+                    y + 3 * dy,
+                    color=colors[pulse],
+                    alpha=0.15,
+                )
 
             plt.plot(
-                N0_array,
-                y,
-                marker="o",
-                color=colors[pulse],
-                label=pulse,
-            )
+                    N0_array,
+                    inF,
+                    marker="x",
+                    linestyle="--",
+                    color="black",
+                    label="Ideal infidelity",
+                )
 
-            
-            plt.fill_between(
-                N0_array,
-                y,
-                y + 3 * dy,
-                color=colors[pulse],
-                alpha=0.15,
+            plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
+            plt.yscale("log")
+            plt.xlabel(r"$N_0\;[V^2/\mathrm{Hz}]$")
+            plt.ylabel("Infidelity")
+            plt.title(
+                f"Gate: {GATE} - White Noise – {titles[metric]}\n"
+                f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
-
-        plt.plot(
-                N0_array,
-                inF,
-                marker="x",
-                linestyle="--",
-                color="black",
-                label="Ideal infidelity",
-            )
-
-        plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
-        plt.yscale("log")
-        plt.xlabel(r"$N_0\;[V^2/\mathrm{Hz}]$")
-        plt.ylabel("Infidelity")
-        plt.title(
-            f"Gate: {GATE} - White Noise – {titles[metric]}\n"
-            f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
-        )
-        plt.legend()
-        plt.grid(True, which="both")
-        plt.tight_layout()
-        save_figure(f"white_noise_{titles[metric]}", save_dir)
-        plt.show()
+            plt.legend()
+            plt.grid(True, which="both")
+            plt.tight_layout()
+            save_figure(f"white_noise_{titles[metric]}", save_dir)
+            plt.show()
 
         inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
 
         # ================= PINK NOISE PLOT =================
-        for pulse in pulse_types:
-            y = inf_pink[pulse]
-            dy = std_pink[pulse]
+        if (inf_pink is not None) and (pink_amps.size > 0):
+            for pulse in pulse_types:
+                y = inf_pink[pulse]
+                dy = std_pink[pulse]
+
+                plt.plot(
+                    S1Hz_array,
+                    y,
+                    marker="x",
+                    color=colors[pulse],
+                    label=pulse,
+                )
+
+                plt.fill_between(
+                    S1Hz_array,
+                    y,
+                    y + 3 * dy,
+                    color=colors[pulse],
+                    alpha=0.15,
+                )
 
             plt.plot(
-                S1Hz_array,
-                y,
-                marker="x",
-                color=colors[pulse],
-                label=pulse,
+                    S1Hz_array,
+                    inF,
+                    marker="x",
+                    linestyle="--",
+                    color="black",
+                    label="Ideal infidelity",
+                )
+            plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
+            plt.yscale("log")
+            plt.xlabel(r"$S(1\,\mathrm{Hz})\;[V^2/\mathrm{Hz}]$")
+            plt.ylabel("Infidelity")
+            plt.title(
+                f"Gate : {GATE} - Flicker Noise – {titles[metric]}\n"
+                f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
+            plt.legend()
+            plt.grid(True, which="both")
+            plt.tight_layout()
+            save_figure(f"pink_noise_{titles[metric]}", save_dir)
+            plt.show()
 
-           
-            plt.fill_between(
-                S1Hz_array,
-                y,
-                y + 3 * dy,
-                color=colors[pulse],
-                alpha=0.15,
-            )
+        # ================= THRESHOLD RMS (RC ONLY) =================
+        # Compute thresholds independently for white and pink when QPT metric is available
+        have_white_qpt = "infidelity_white_qpt" in keys
+        have_pink_qpt = "infidelity_pink_qpt" in keys
 
-        plt.plot(
-                S1Hz_array,
-                inF,
-                marker="x",
-                linestyle="--",
-                color="black",
-                label="Ideal infidelity",
-            )
-        plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
-        plt.yscale("log")
-        plt.xlabel(r"$S(1\,\mathrm{Hz})\;[V^2/\mathrm{Hz}]$")
-        plt.ylabel("Infidelity")
-        plt.title(
-            f"Gate : {GATE} - Flicker Noise – {titles[metric]}\n"
-            f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
-        )
-        plt.legend()
-        plt.grid(True, which="both")
-        plt.tight_layout()
-        save_figure(f"pink_noise_{titles[metric]}", save_dir)
-        plt.show()
+        thresholds_white_ok = False
+        thresholds_pink_ok = False
 
-        # ================= THRESHOLD RMS (SQUARE ONLY) =================
-        RC_white = inf_white["RC"]
-        RC_pink = inf_pink["RC"]
+        if have_white_qpt:
+            RC_white = np.array(data["infidelity_white_qpt"].item().get("RC", []), dtype=float)
+            RC_std_white = np.array(data["infidelity_white_std_qpt"].item().get("RC", []), dtype=float)
+            can_white = (RC_white.size > 0) and (RC_std_white.size == RC_white.size) and (white_amps.size == RC_white.size)
+            if can_white:
+                cond_white = (RC_white + 3*RC_std_white) > threshold
+                idx_white = int(np.argmax(cond_white)) if cond_white.any() else RC_white.size - 1
+                rms_white_thr = float(white_amps[idx_white])
+                N0_thr = float(N0_array[idx_white])
+                thresholds_white_ok = True
 
-        RC_std_white = std_white["RC"]
-        RC_std_pink =std_pink["RC"]
-
-        idx_white = np.argmax(RC_white + 3*RC_std_white > threshold)
-        idx_pink = np.argmax(RC_pink + 3*RC_std_pink > threshold)
-
-        rms_white_thr = white_amps[idx_white]
-        rms_pink_thr = pink_amps[idx_pink]
-
-        N0_thr = N0_array[idx_white]
-        S1Hz_thr = S1Hz_array[idx_pink]
+        if have_pink_qpt:
+            RC_pink = np.array(data["infidelity_pink_qpt"].item().get("RC", []), dtype=float)
+            RC_std_pink = np.array(data["infidelity_pink_std_qpt"].item().get("RC", []), dtype=float)
+            can_pink = (RC_pink.size > 0) and (RC_std_pink.size == RC_pink.size) and (pink_amps.size == RC_pink.size)
+            if can_pink:
+                cond_pink = (RC_pink + 3*RC_std_pink) > threshold
+                idx_pink = int(np.argmax(cond_pink)) if cond_pink.any() else RC_pink.size - 1
+                rms_pink_thr = float(pink_amps[idx_pink])
+                S1Hz_thr = float(S1Hz_array[idx_pink])
+                thresholds_pink_ok = True
 
         # ================= PSD AT THRESHOLD =================
-        x_white, _ = noise_psd(T, N, psd_func=white_psd)
-    
-        x_white *= rms_white_thr            
-        Xw = np.fft.rfft(x_white)
-        Sw = 2 / (N * fs) * np.abs(Xw) ** 2
+        if thresholds_white_ok:
+            x_white, _ = noise_psd(T, N, psd_func=white_psd)
+            x_white *= rms_white_thr
+            Xw = np.fft.rfft(x_white)
+            Sw = 2 / (N * fs) * np.abs(Xw) ** 2
 
-        Sp_array = np.zeros((100, N//2+1))
+            plt.loglog(f[1:-1], Sw[1:-1], label="White noise")
+            plt.xlabel("Frequency [Hz]")
+            plt.ylabel(r"PSD [$V^2$/Hz]")
+            plt.title(
+                f"Gate: {GATE} - PSD at white threshold – {titles[metric]}\n"
+                f"white RMS={rms_white_thr*1e3:.3f} mV"
+            )
+            plt.legend()
+            plt.grid(True, which="both")
+            plt.tight_layout()
+            save_figure(f"PSD_threshold_white_{titles[metric]}", save_dir)
+            plt.show()
 
-        for i in range(100):
-            x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
-            x_pink *= rms_pink_thr
+        if thresholds_pink_ok:
+            Sp_array = np.zeros((100, N//2+1))
+            for i in range(100):
+                x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
+                x_pink *= rms_pink_thr
+                Xp = np.fft.rfft(x_pink)
+                Sp_array[i] =  2 / (N * fs) * np.abs(Xp) ** 2
 
-            Xp = np.fft.rfft(x_pink)
-            Sp_array[i] =  2 / (N * fs) * np.abs(Xp) ** 2
+            # Average PSD over realizations
+            Sp = np.mean(Sp_array, axis=0)
 
-        # Average PSD over realizations
-        Sp = np.mean(Sp_array, axis=0)
-
-        plt.loglog(f[1:-1], Sw[1:-1], label="White noise")
-        plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise")
-        plt.xlabel("Frequency [Hz]")
-        plt.ylabel(r"PSD [$V^2$/Hz]")
-        plt.title(
-            f"Gate: {GATE} - PSD at threshold – {titles[metric]}\n"
-            f"white RMS={rms_white_thr*1e3:.3f} mV, "
-            f"pink RMS={rms_pink_thr*1e3:.3f} mV"
-        )
-        plt.legend()
-        plt.grid(True, which="both")
-        plt.tight_layout()
-        save_figure(f"PSD_threshold_{titles[metric]}", save_dir)
-        plt.show()
-
-
-        # Plot histogram / distribution
-        plt.figure(figsize=(16,9))
-        plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
-        plt.hist(x_white*1e3, bins=50, alpha=0.3, label="White noise")
-
-        # Overlay system resolution
-        resolution = dV
-        plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
-        plt.axvline(-resolution*1e3, color='k', linestyle='--')
-
-        # 3-sigma lines
-        plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
-        plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
-
-        plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\sigma$ White = {rms_white_thr*1e3:.2f} mV")
-        plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
-
-        plt.xlabel("Noise value [mV]")
-        plt.ylabel("Counts")
-        plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
-        plt.legend()
-        save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
-        plt.show()
-
-        # Plot histogram / distribution
-        plt.figure(figsize=(16,9))
-        plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
-
-        # Overlay system resolution
-        resolution = dV
-        plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
-        plt.axvline(-resolution*1e3, color='k', linestyle='--')
-
-        # 3-sigma lines
-        plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
-        plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
+            plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise")
+            plt.xlabel("Frequency [Hz]")
+            plt.ylabel(r"PSD [$V^2$/Hz]")
+            plt.title(
+                f"Gate: {GATE} - PSD at pink threshold – {titles[metric]}\n"
+                f"pink RMS={rms_pink_thr*1e3:.3f} mV"
+            )
+            plt.legend()
+            plt.grid(True, which="both")
+            plt.tight_layout()
+            save_figure(f"PSD_threshold_pink_{titles[metric]}", save_dir)
+            plt.show()
 
 
-        plt.xlabel("Noise value [mV]")
-        plt.ylabel("Counts")
-        plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
-        plt.legend()
-        save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
-        plt.show()
+        if thresholds_white_ok and thresholds_pink_ok:
+            # Plot combined PSD (white + pink) at thresholds
+            plt.figure(figsize=(12,6))
+            plt.loglog(f[1:-1], Sw[1:-1], label="White noise PSD @thr")
+            plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise PSD @thr")
+            plt.xlabel("Frequency [Hz]")
+            plt.ylabel(r"PSD [$V^2$/Hz]")
+            plt.title(
+                f"Gate: {GATE} - PSD at thresholds – {titles[metric]}\n"
+                f"white RMS={rms_white_thr*1e3:.3f} mV, pink RMS={rms_pink_thr*1e3:.3f} mV"
+            )
+            plt.legend()
+            plt.grid(True, which="both")
+            plt.tight_layout()
+            save_figure(f"PSD_threshold_combined_{titles[metric]}", save_dir)
+            plt.show()
 
-        # ================= WRITE OUTPUT FILE =================
-        out_file = save_dir / "noise_threshold_info.txt"
-        with open(out_file, "w") as ftxt:
-            ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
-            ftxt.write("-" * 40 + "\n")
-            ftxt.write("White noise:\n")
-            ftxt.write(f"  RMS threshold = {rms_white_thr:.3e} V\n")
-            ftxt.write(f"  N0 = {N0_thr:.3e} V^2/Hz\n\n")
-            ftxt.write("Flicker noise:\n")
-            ftxt.write(f"  RMS threshold = {rms_pink_thr:.3e} V\n")
-            ftxt.write(f"  S(1 Hz) = {S1Hz_thr:.3e} V^2/Hz\n")
+            # Plot combined histogram / distribution when both are available
+            plt.figure(figsize=(16,9))
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
+            plt.hist(x_white*1e3, bins=50, alpha=0.3, label="White noise")
+
+            # Overlay system resolution
+            resolution = dV
+            plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
+            plt.axvline(-resolution*1e3, color='k', linestyle='--')
+
+            # 3-sigma lines
+            plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
+            plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
+
+            plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\\sigma$ White = {rms_white_thr*1e3:.2f} mV")
+            plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
+
+            plt.xlabel("Noise value [mV]")
+            plt.ylabel("Counts")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.legend()
+            save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
+            plt.show()
+
+        if thresholds_pink_ok:
+            # Plot histogram / distribution (pink only)
+            plt.figure(figsize=(16,9))
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
+
+            # Overlay system resolution
+            resolution = dV
+            plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
+            plt.axvline(-resolution*1e3, color='k', linestyle='--')
+
+            # 3-sigma lines
+            plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
+            plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
+
+            plt.xlabel("Noise value [mV]")
+            plt.ylabel("Counts")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.legend()
+            save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
+            plt.show()
+
+        if thresholds_white_ok:
+            # Plot histogram / distribution (white only)
+            plt.figure(figsize=(16,9))
+            plt.hist(x_white*1e3, bins=50, alpha=0.6, label="White noise")
+
+            # Overlay system resolution
+            resolution = dV
+            plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
+            plt.axvline(-resolution*1e3, color='k', linestyle='--')
+
+            # 3-sigma lines
+            plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\\sigma$ White = {rms_white_thr*1e3:.2f} mV")
+            plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
+
+            plt.xlabel("Noise value [mV]")
+            plt.ylabel("Counts")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.legend()
+            save_figure(rf"Noise distributions White noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
+            plt.show()
+
+        # ================= WRITE OUTPUT FILE(S) =================
+        if thresholds_white_ok:
+            out_file_w = save_dir / "noise_threshold_info_white.txt"
+            with open(out_file_w, "w") as ftxt:
+                ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
+                ftxt.write("-" * 40 + "\n")
+                ftxt.write("White noise:\n")
+                ftxt.write(f"  RMS threshold = {rms_white_thr:.3e} V\n")
+                ftxt.write(f"  N0 = {N0_thr:.3e} V^2/Hz\n")
+
+        if thresholds_pink_ok:
+            out_file_p = save_dir / "noise_threshold_info_pink.txt"
+            with open(out_file_p, "w") as ftxt:
+                ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
+                ftxt.write("-" * 40 + "\n")
+                ftxt.write("Flicker noise:\n")
+                ftxt.write(f"  RMS threshold = {rms_pink_thr:.3e} V\n")
+                ftxt.write(f"  S(1 Hz) = {S1Hz_thr:.3e} V^2/Hz\n")
+
+        if thresholds_white_ok and thresholds_pink_ok:
+            out_file_c = save_dir / "noise_threshold_info_combined.txt"
+            with open(out_file_c, "w") as ftxt:
+                ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
+                ftxt.write("-" * 40 + "\n")
+                ftxt.write("Combined thresholds (white + pink):\n")
+                ftxt.write(f"  White RMS threshold = {rms_white_thr:.3e} V, N0 = {N0_thr:.3e} V^2/Hz\n")
+                ftxt.write(f"  Pink RMS threshold = {rms_pink_thr:.3e} V, S(1 Hz) = {S1Hz_thr:.3e} V^2/Hz\n")
 
 
 
@@ -438,8 +521,15 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
     pulse_types = data["pulse_types"]
     sigma_jitters = data["sigma_jitters"]
 
-    # Extract and clip data
-    metrics = ["", "_state", "_qpt"]
+    # Extract and clip data (detect available)
+    keys = set(data.keys())
+    metrics = []
+    if "infidelity_jitter" in keys:
+        metrics.append("")
+    if "infidelity_jitter_state" in keys:
+        metrics.append("_state")
+    if "infidelity_jitter_qpt" in keys:
+        metrics.append("_qpt")
     infidelity_dicts = {}
     std_dicts = {}
 

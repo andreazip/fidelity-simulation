@@ -350,7 +350,7 @@ def run_test_gates_heatmaps(
         print(f"[DONE] Stored heatmaps for gate {gate_name}")
 
 # ---- Jitter noise ----
-def run_jitter(cfg, dirs, iterations=50):
+def run_jitter(cfg, dirs, iterations=50, n_jobs=None):
     file = dirs["data"] / "jitter.npz"
     if file.exists():
         return file
@@ -370,12 +370,16 @@ def run_jitter(cfg, dirs, iterations=50):
         T=cfg.T,
         N=cfg.N,
         iterations=iterations,
-        output_file=file
+        output_file=file,
+        compute_state=False,
+        compute_operator=False,
+        compute_qpt=True,
+        n_jobs=n_jobs,
     )
     return file
 
 # ---- White/Pink noise ----
-def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50):
+def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50, n_jobs=None):
     file = dirs["data"] / "noise.npz"
     if file.exists():
         return file
@@ -397,6 +401,123 @@ def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50):
         white_amps=white_amps,
         pink_amps=pink_amps,
         iterations=iterations,
-        output_file=file
+        output_file=file,
+        compute_state=False,
+        compute_operator=False,
+        compute_qpt=True,
+        n_jobs=n_jobs,
     )
     return file
+
+def run_white_noise_only(cfg, dirs, white_amps, iterations=50, n_jobs=None):
+    file = dirs["data"] / "white_noise.npz"
+    if file.exists():
+        return file
+
+    V = np.log(cfg.J / cfg.J_offset) / (2 * cfg.alpha)
+    # Reuse combined noise function but with empty pink sweep
+    EO.simulate_infidelity_vs_noise(
+        V=V,
+        alpha=cfg.alpha,
+        J_offset=cfg.J_offset,
+        theta1=cfg.theta1,
+        theta2=cfg.theta2,
+        theta3=cfg.theta3,
+        theta4=cfg.theta4,
+        t_rise=cfg.t_rise,
+        t_fall=cfg.t_fall,
+        tau=cfg.tau,
+        T=cfg.T,
+        N=cfg.N,
+        white_amps=white_amps,
+        pink_amps=np.array([]),
+        iterations=iterations,
+        output_file=file,
+        compute_state=False,
+        compute_operator=False,
+        compute_qpt=True,
+        n_jobs=n_jobs,
+    )
+    return file
+
+def run_pink_noise_only(cfg, dirs, pink_amps, iterations=50, n_jobs=None):
+    file = dirs["data"] / "pink_noise.npz"
+    if file.exists():
+        return file
+
+    V = np.log(cfg.J / cfg.J_offset) / (2 * cfg.alpha)
+    EO.simulate_infidelity_vs_noise(
+        V=V,
+        alpha=cfg.alpha,
+        J_offset=cfg.J_offset,
+        theta1=cfg.theta1,
+        theta2=cfg.theta2,
+        theta3=cfg.theta3,
+        theta4=cfg.theta4,
+        t_rise=cfg.t_rise,
+        t_fall=cfg.t_fall,
+        tau=cfg.tau,
+        T=cfg.T,
+        N=cfg.N,
+        white_amps=np.array([]),
+        pink_amps=pink_amps,
+        iterations=iterations,
+        output_file=file,
+        compute_state=False,
+        compute_operator=False,
+        compute_qpt=True,
+        n_jobs=n_jobs,
+    )
+    return file
+
+# ---- Merge white/pink results into combined ----
+def merge_noise_results(dirs):
+    """Create a combined noise results file from existing white-only and pink-only runs.
+
+    If both white_noise.npz and pink_noise.npz exist under `dirs["data"]`,
+    merge their contents into noise.npz in the same folder and return the path.
+
+    Returns
+    -------
+    pathlib.Path | None
+        Path to the combined file if created/found, else None when inputs are missing.
+    """
+    data_dir = dirs["data"]
+    path_w = data_dir / "white_noise.npz"
+    path_p = data_dir / "pink_noise.npz"
+    path_c = data_dir / "noise.npz"
+
+    if path_c.exists():
+        return path_c
+
+    if not (path_w.exists() and path_p.exists()):
+        return None
+
+    dw = np.load(path_w, allow_pickle=True)
+    dp = np.load(path_p, allow_pickle=True)
+
+    # Prefer pulse_types from white; fall back to pink
+    pulse_types = dw.get("pulse_types", dp.get("pulse_types"))
+
+    save_dict = {
+        "pulse_types": pulse_types,
+        "white_amps": dw["white_amps"],
+        "pink_amps": dp["pink_amps"],
+    }
+
+    # Merge available metric families; only include ones present in both
+    metric_suffixes = ["", "_state", "_qpt"]
+    for suf in metric_suffixes:
+        w_key = f"infidelity_white{suf}"
+        w_std_key = f"infidelity_white_std{suf}"
+        p_key = f"infidelity_pink{suf}"
+        p_std_key = f"infidelity_pink_std{suf}"
+
+        if (w_key in dw and w_std_key in dw and p_key in dp and p_std_key in dp):
+            save_dict[w_key] = dw[w_key].item()
+            save_dict[w_std_key] = dw[w_std_key].item()
+            save_dict[p_key] = dp[p_key].item()
+            save_dict[p_std_key] = dp[p_std_key].item()
+
+    np.savez(path_c, **save_dict)
+    return path_c
