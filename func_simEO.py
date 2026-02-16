@@ -10,6 +10,7 @@ from matplotlib.colors import LogNorm
 from pathlib import Path
 import re
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
 def _one_shot_exchange(args):
     """Worker-friendly shot wrapper.
 
@@ -25,6 +26,9 @@ def _one_shot_exchange(args):
         U_ideal_T_mat,
         segments,
         compute_state, compute_operator, compute_qpt,
+        alpha,
+        deltaV,
+        deltat,
     ) = args
 
     U_ideal_T_q = Qobj(U_ideal_T_mat) if U_ideal_T_mat is not None else None
@@ -33,12 +37,12 @@ def _one_shot_exchange(args):
         J_offset=J_offset,
         V1=V,
         V2=V,
-        alpha=25,  # alpha is not used here for ideal reuse; overridden below via pulses
-        deltaV=0,
+        alpha=alpha,
+        deltaV=deltaV,
         pulse_type=pulse,
         t_rise=t_rise,
         t_fall=t_fall,
-        deltat=0,
+        deltat=deltat,
         tau=tau,
         theta1=theta1,
         theta2=theta2,
@@ -937,6 +941,9 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                     Umat,
                                     segments,
                                     compute_state, compute_operator, compute_qpt,
+                                    alpha,
+                                    0,
+                                    0,
                                 ),
                             ) for __ in range(iterations)
                         ]
@@ -1039,6 +1046,9 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                     Umat,
                                     segments,
                                     compute_state, compute_operator, compute_qpt,
+                                    alpha,
+                                    0,
+                                    0,
                                 ),
                             ) for __ in range(iterations)
                         ]
@@ -1274,6 +1284,9 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
                                     Umat,
                                     segments,
                                     compute_state, compute_operator, compute_qpt,
+                                    alpha,
+                                    0,
+                                    0,
                                 ),
                             ) for __ in range(iterations)
                         ]

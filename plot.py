@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm  
 from pathlib import Path
 import re
-from gate_library import  get_gate_angles
+from gate_library import get_gate_angles, GATE_LIBRARY
 
 
 def title_to_filename(title, ext="png"):
@@ -214,9 +214,10 @@ def plot_infidelity_vs_noise(
         # ================= WHITE NOISE PLOT =================
         if (inf_white is not None) and (white_amps.size > 0):
             for pulse in pulse_types:
+                
                 y = inf_white[pulse]
                 dy = std_white[pulse]
-
+                print(y)
                 plt.plot(
                     N0_array,
                     y,
@@ -379,7 +380,6 @@ def plot_infidelity_vs_noise(
 
         if thresholds_white_ok and thresholds_pink_ok:
             # Plot combined PSD (white + pink) at thresholds
-            plt.figure(figsize=(12,6))
             plt.loglog(f[1:-1], Sw[1:-1], label="White noise PSD @thr")
             plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise PSD @thr")
             plt.xlabel("Frequency [Hz]")
@@ -613,7 +613,8 @@ def plot_infidelity_heatmaps(
     floor_value=1e-6,
     save_dir=None,
     save_prefix="Heatmap pulses",
-    plot_individual=True
+    plot_individual=True,
+    threshold=1e-4,
 ):
     """
     Plot infidelity heatmaps for different pulse types with a shared colorbar,
@@ -680,6 +681,7 @@ def plot_infidelity_heatmaps(
         ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
         ax.set_xlabel("ΔV [mV]", labelpad=5)
         ax.set_ylabel("Δt [ps]", labelpad=5)
+        # Note: resolution markers are shown in individual contour plots below
 
     cbar = fig.colorbar(
         im, ax=axes, orientation='vertical', fraction=0.05, pad=0.02
@@ -717,14 +719,236 @@ def plot_infidelity_heatmaps(
                 ]
             )
 
+            # Mark resolutions with crosses and legend (scan from 0 outward)
+            map_p = infidelity_maps[pulse_type]
+            j0 = int(np.argmin(np.abs(delta_V_list)))
+            i0 = int(np.argmin(np.abs(delta_t_list)))
+            # Δt resolution at ΔV = 0: scan dt >= 0
+            dt_idx = None
+            for ii in range(i0, len(delta_t_list)):
+                if map_p[ii, j0] > threshold:
+                    dt_idx = ii
+                    break
+            # ΔV resolution at Δt = 0: scan dV >= 0
+            dV_idx = None
+            for jj in range(j0, len(delta_V_list)):
+                if map_p[i0, jj] > threshold:
+                    dV_idx = jj
+                    break
+            handles = []
+            labels = []
+            if dt_idx is not None:
+                dt_thr_ps = delta_t_list[dt_idx]*1e12
+                h1 = plt.scatter(delta_V_list[j0]*1e3, dt_thr_ps, marker='x', color='yellow')
+                handles.append(h1)
+                labels.append(f"Δt@ΔV=0: {dt_thr_ps:.2f} ps")
+            if dV_idx is not None:
+                dV_thr_uV = delta_V_list[dV_idx]*1e6
+                h2 = plt.scatter(dV_thr_uV/1e3, delta_t_list[i0]*1e12, marker='x', color='cyan')
+                handles.append(h2)
+                labels.append(f"ΔV@Δt=0: {dV_thr_uV:.2f} μV")
+
             plt.title(f"{pulse_type.capitalize()} pulse")
             plt.xlabel("ΔV [mV]")
             plt.ylabel("Δt [ps]")
             plt.colorbar(im, label="log10(Infidelity)")
             plt.grid(False)
+            if handles:
+                plt.legend(handles, labels, loc='upper right')
 
             if save_dir is not None:
                 save_figure(f"{pulse_type.capitalize()} pulse", save_dir)
 
             plt.show()
+
+
+# ---- Gate thresholds from saved 1D heatmaps ----
+def plot_gate_thresholds_from_heatmaps(BASE_DIR: Path, J: float, threshold: float = 1e-4):
+    """Build and plot gate thresholds (dT, dV) for all gates using saved 1D heatmaps.
+
+    - Reads each gate's heatmaps_1D.npz under BASE_DIR/test_gates/<gate>/**/Data
+    - Computes first crossing above `threshold` scanning from 0 outward (dT at dV=0; dV at dT=0)
+    - Writes/updates gate_thresholds_J=..MHz.txt
+    - Creates summary line+point plots saved under BASE_DIR/test_gates/Plots
+    """
+    test_root = BASE_DIR / "test_gates"
+    plots_dir = test_root / "Plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    gates = []
+    pulses = ["square", "linear", "RC"]
+    dt_thr_map = {p: [] for p in pulses}
+    dV_thr_map = {p: [] for p in pulses}
+
+    outfile = test_root / f"gate_thresholds_J={J/1e6:.0f}MHz.txt"
+    with open(outfile, "w", encoding="utf-8") as f:
+        f.write("# Gate threshold test (from saved heatmaps)\n")
+        f.write(f"# Infidelity thr : {threshold:.1e}\n\n")
+
+        for gate_name in GATE_LIBRARY.keys():
+            j_dir = test_root / "gates" / gate_name / f"J={J/1e6:.0f}MHz"
+            candidates = list(j_dir.rglob("**/Data/heatmaps_1D.npz"))
+            if not candidates:
+                print(f"[SKIP] No saved 1D heatmaps found for gate {gate_name} at {j_dir}")
+                continue
+            heatmap_file = max(candidates, key=lambda p: p.stat().st_mtime)
+            data = np.load(heatmap_file, allow_pickle=True)
+
+            delta_t_list = data["delta_t_list"]
+            delta_V_list = data["delta_V_list"]
+            inf_dt = data["infidelity_dt"].item()
+            inf_dV = data["infidelity_dV"].item()
+
+            gates.append(gate_name)
+            f.write(f"GATE {gate_name}\n")
+            f.write("-" * 50 + "\n")
+
+            i0 = int(np.argmin(np.abs(delta_t_list)))
+            j0 = int(np.argmin(np.abs(delta_V_list)))
+
+            # dT thresholds (dV = 0)
+            for pulse in pulses:
+                inf_list_dt = inf_dt.get(pulse)
+                dt_val = None
+                if inf_list_dt is not None:
+                    for ii in range(i0, len(delta_t_list)):
+                        if inf_list_dt[ii] > threshold:
+                            dt_val = delta_t_list[ii]
+                            break
+                dt_thr_map[pulse].append(dt_val * 1e12 if dt_val is not None else np.nan)
+                if dt_val is not None:
+                    f.write(f"First failure at dT = {dt_val*1e12:.3f} ps for {pulse}\n")
+                else:
+                    f.write(f"No failure in dT sweep range for {pulse}\n")
+            f.write("\n")
+
+            # dV thresholds (dT = 0)
+            for pulse in pulses:
+                inf_list_dV = inf_dV.get(pulse)
+                dV_val = None
+                if inf_list_dV is not None:
+                    for jj in range(j0, len(delta_V_list)):
+                        if inf_list_dV[jj] > threshold:
+                            dV_val = delta_V_list[jj]
+                            break
+                dV_thr_map[pulse].append(dV_val * 1e6 if dV_val is not None else np.nan)
+                if dV_val is not None:
+                    f.write(f"First failure at dV = {dV_val*1e6:.3f} uV for {pulse}\n")
+                else:
+                    f.write(f"No failure in dV sweep range for {pulse}\n")
+            f.write("\n")
+
+    if gates:
+        x = np.arange(len(gates))
+
+        # dT thresholds plot: three pulses together
+        for pulse in pulses:
+            plt.plot(x, dt_thr_map[pulse], marker='o', linestyle='-', label=pulse)
+        plt.xticks(x, gates, rotation=45, ha="right")
+        plt.ylabel("dT threshold (ps)")
+        plt.title(f"Gate dT thresholds at J={J/1e6:.0f} MHz (infidelity>{threshold:.1e})")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        dt_plot_path = plots_dir / f"gate_dt_thresholds_J={J/1e6:.0f}MHz.png"
+        plt.savefig(dt_plot_path, dpi=200)
+        plt.close()
+
+        # dV thresholds plot: three pulses togethe
+        for pulse in pulses:
+            plt.plot(x, dV_thr_map[pulse], marker='o', linestyle='-', label=pulse)
+        plt.xticks(x, gates, rotation=45, ha="right")
+        plt.ylabel("dV threshold (uV)")
+        plt.title(f"Gate dV thresholds at J={J/1e6:.0f} MHz (infidelity>{threshold:.1e})")
+        plt.grid(True, alpha=0.3)
+        plt.legend()
+        plt.tight_layout()
+        dV_plot_path = plots_dir / f"gate_dV_thresholds_J={J/1e6:.0f}MHz.png"
+        plt.savefig(dV_plot_path, dpi=200)
+        plt.close()
+
+        print(f"[PLOTS] Saved thresholds: dT → {dt_plot_path}, dV → {dV_plot_path}")
+        print(f"[TXT] Saved threshold details: {outfile}")
+
+    return plots_dir
+
+
+# ---- RC thresholds across multiple J ----
+def plot_rc_thresholds_across_J(BASE_DIR: Path, J_list: list[float], threshold: float = 1e-4):
+    """Create cross-J line plots for RC pulse thresholds (dT, dV) over gates."""
+    test_root = BASE_DIR / "test_gates"
+    plots_dir = test_root / "Plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+
+    gates = list(GATE_LIBRARY.keys())
+    x = np.arange(len(gates))
+
+    # dT thresholds across J
+    for J in J_list:
+        y_dt = []
+        for gate_name in gates:
+            j_dir = test_root / "gates" / gate_name / f"J={J/1e6:.0f}MHz"
+            candidates = list(j_dir.rglob("**/Data/heatmaps_1D.npz"))
+            if not candidates:
+                y_dt.append(np.nan)
+                continue
+            heatmap_file = max(candidates, key=lambda p: p.stat().st_mtime)
+            data = np.load(heatmap_file, allow_pickle=True)
+            delta_t_list = data["delta_t_list"]
+            inf_dt = data["infidelity_dt"].item()
+            i0 = int(np.argmin(np.abs(delta_t_list)))
+            inf_list_dt = inf_dt.get("RC")
+            dt_val = None
+            if inf_list_dt is not None:
+                for ii in range(i0, len(delta_t_list)):
+                    if inf_list_dt[ii] > threshold:
+                        dt_val = delta_t_list[ii]
+                        break
+            y_dt.append(dt_val * 1e12 if dt_val is not None else np.nan)
+        plt.plot(x, y_dt, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz")
+    plt.xticks(x, gates, rotation=45, ha="right")
+    plt.ylabel("dT threshold (ps)")
+    plt.title("RC dT thresholds across J")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    rc_dt_path = plots_dir / "gate_RC_dt_thresholds_Js.png"
+    plt.savefig(rc_dt_path, dpi=200)
+    plt.close()
+
+    # dV thresholds across J
+    for J in J_list:
+        y_dV = []
+        for gate_name in gates:
+            j_dir = test_root / "gates" / gate_name / f"J={J/1e6:.0f}MHz"
+            candidates = list(j_dir.rglob("**/Data/heatmaps_1D.npz"))
+            if not candidates:
+                y_dV.append(np.nan)
+                continue
+            heatmap_file = max(candidates, key=lambda p: p.stat().st_mtime)
+            data = np.load(heatmap_file, allow_pickle=True)
+            delta_V_list = data["delta_V_list"]
+            inf_dV = data["infidelity_dV"].item()
+            j0 = int(np.argmin(np.abs(delta_V_list)))
+            inf_list_dV = inf_dV.get("RC")
+            dV_val = None
+            if inf_list_dV is not None:
+                for jj in range(j0, len(delta_V_list)):
+                    if inf_list_dV[jj] > threshold:
+                        dV_val = delta_V_list[jj]
+                        break
+            y_dV.append(dV_val * 1e6 if dV_val is not None else np.nan)
+        plt.plot(x, y_dV, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz")
+    plt.xticks(x, gates, rotation=45, ha="right")
+    plt.ylabel("dV threshold (uV)")
+    plt.title("RC dV thresholds across J")
+    plt.grid(True, alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    rc_dV_path = plots_dir / "gate_RC_dV_thresholds_Js.png"
+    plt.savefig(rc_dV_path, dpi=200)
+    plt.close()
+
+    print(f"[PLOTS] Saved RC cross-J thresholds: dT → {rc_dt_path}, dV → {rc_dV_path}")
+    return plots_dir
 

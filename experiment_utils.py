@@ -5,7 +5,9 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 import func_simEO as EO
 from tqdm import tqdm
+from scipy.optimize import brentq
 from gate_library import GATE_LIBRARY, get_gate_angles
+import matplotlib.pyplot as plt
 
 @dataclass(frozen=True)
 class ExperimentConfig:
@@ -51,9 +53,15 @@ def experiment_id(cfg: ExperimentConfig) -> str:
     s = json.dumps(asdict(cfg), sort_keys=True) #convert dicitionary into string
     return hashlib.sha1(s.encode()).hexdigest()[:8]
 
+def _alpha_folder_str(alpha: float) -> str:
+    """Format alpha for folder names: integer if integral else one decimal."""
+    aval = round(float(alpha), 1)
+    return str(int(aval)) if float(aval).is_integer() else f"{aval:.1f}"
+
 def experiment_dirs(base: Path, cfg: ExperimentConfig, GATE = "X"):
     cfg_id = experiment_id(cfg)
-    root = base /"gates"/ GATE/ f"J={cfg.J/1e6:.0f}MHz" / f"alpha={cfg.alpha}" / f"Joff={cfg.J_offset/1e3:.0f}kHz" / f"cfg_{cfg_id}"
+    alpha_str = _alpha_folder_str(cfg.alpha)
+    root = base /"gates"/ GATE/ f"J={cfg.J/1e6:.0f}MHz" / f"alpha={alpha_str}" / f"Joff={cfg.J_offset/1e3:.0f}kHz" / f"cfg_{cfg_id}"
     dirs = {
         "root": root,
         "data": root / "Data",
@@ -122,7 +130,7 @@ def run_clean_fidelities(cfg, dirs, plot_pulse=False):
     return file
 
 # ---- Heatmaps ----
-def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list):
+def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list, n_jobs=None, status_cb=None, stop=None):
     file = dirs["data"] / "heatmaps.npz"
     if file.exists():
         return file
@@ -132,33 +140,187 @@ def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list):
     pulse_types = ['square','linear','RC']
 
     for pulse in tqdm(pulse_types, desc="Pulse types"):
+        if stop and stop():
+            if status_cb:
+                try:
+                    status_cb(f"[STOP] Requested during heatmaps ({pulse})")
+                except Exception:
+                    pass
+            return None
         inf_map = np.zeros((len(delta_t_list), len(delta_V_list)))
 
-        for i, dt in enumerate(tqdm(delta_t_list, desc=f"{pulse} Δt", unit="dt", leave=False)):
-            for j, dV in enumerate(delta_V_list):
-                _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
-                    J_offset=cfg.J_offset,
-                    V1=V, V2=V,
-                    theta1=cfg.theta1,
-                    theta2=cfg.theta2,
-                    theta3=cfg.theta3,
-                    theta4=cfg.theta4,
-                    alpha=cfg.alpha,
-                    deltaV=dV,
-                    deltat=dt,
-                    pulse_type=pulse,
-                    t_rise=cfg.t_rise,
-                    t_fall=cfg.t_fall,
-                    tau=cfg.tau,
-                    white_amp=0,
-                    pink_amp=0,
-                    sigma_jitter=0,
-                    plot_pulse=False,
-                    plot_bloch=False,
-                    T=cfg.T,
-                    N=cfg.N,
-                )
-                inf_map[i, j] = 1 - fid
+        # Precompute ideal segments and unitary once per pulse
+        # Build segments (durations and start/end times)
+        J12_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+        J23_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+        t = np.zeros(4)
+        if pulse == 'square':
+            t[0] = cfg.theta1/J23_amp_id
+            t[1] = cfg.theta2/J12_amp_id
+            t[2] = cfg.theta3/J23_amp_id
+            t[3] = cfg.theta4/J12_amp_id
+            t_total = sum(t)
+        elif pulse == 'linear':
+            def objective_lin(theta):
+                def compute_time(theta_val):
+                    if theta_val == 0:
+                        return 0.0
+                    def obj(tconst):
+                        t_end = cfg.t_rise + tconst + cfg.t_fall
+                        return EO.I_total(t_end, V, cfg.t_rise, cfg.t_fall, cfg.J_offset, cfg.alpha, 0, 'linear') - theta_val
+                    t_const = brentq(obj, 0, 1)
+                    return cfg.t_rise + t_const + cfg.t_fall
+                return compute_time(theta)
+            t[0] = objective_lin(cfg.theta1)
+            t[1] = objective_lin(cfg.theta2)
+            t[2] = objective_lin(cfg.theta3)
+            t[3] = objective_lin(cfg.theta4)
+            t_total = np.sum(t)
+        elif pulse == 'RC':
+            def objective_rc(theta):
+                def compute_time(theta_val):
+                    if theta_val == 0:
+                        return 0.0
+                    def obj(tconst):
+                        t_end = tconst + 14*cfg.tau
+                        return EO.I_total(t_end, V, 0, 0, cfg.J_offset, cfg.alpha, cfg.tau, 'RC') - theta_val
+                    t_const = brentq(obj, 0, 1)
+                    return t_const + 14*cfg.tau
+                return compute_time(theta)
+            t[0] = objective_rc(cfg.theta1)
+            t[1] = objective_rc(cfg.theta2)
+            t[2] = objective_rc(cfg.theta3)
+            t[3] = objective_rc(cfg.theta4)
+            t_total = np.sum(t)
+
+        t_start1, t_end1 = 1e-9, t[0] + 1e-9
+        t_start2, t_end2 = t[0] + 1e-9, t[0] + t[1] +1e-9
+        t_start3, t_end3 = t[0] + t[1] +1e-9, t[0]+t[1]+t[2] + 1e-9
+        t_start4, t_end4 = t[0]+t[1]+t[2] + 1e-9, t[0]+t[1]+t[2]+t[3] +1e-9
+
+        segments = {
+            't': t,
+            't_total': t_total,
+            't_start1': t_start1, 't_end1': t_end1,
+            't_start2': t_start2, 't_end2': t_end2,
+            't_start3': t_start3, 't_end3': t_end3,
+            't_start4': t_start4, 't_end4': t_end4,
+        }
+
+        # Precompute ideal unitary once
+        _, _, _, _, U_ideal_T = EO.run_exchange_qubit_simulation(
+            J_offset=cfg.J_offset,
+            V1=V, V2=V,
+            theta1=cfg.theta1,
+            theta2=cfg.theta2,
+            theta3=cfg.theta3,
+            theta4=cfg.theta4,
+            alpha=cfg.alpha,
+            deltaV=0.0,
+            deltat=0.0,
+            pulse_type=pulse,
+            t_rise=cfg.t_rise,
+            t_fall=cfg.t_fall,
+            tau=cfg.tau,
+            white_amp=0,
+            pink_amp=0,
+            sigma_jitter=0,
+            plot_pulse=False,
+            plot_bloch=False,
+            T=cfg.T,
+            N=cfg.N,
+            segments=segments,
+            compute_state=False,
+            compute_operator=False,
+            compute_qpt=False,
+        )
+
+        Umat = U_ideal_T.full()
+
+        if n_jobs and n_jobs > 1:
+            from concurrent.futures import ProcessPoolExecutor, as_completed
+            tasks = []
+            ex = ProcessPoolExecutor(max_workers=int(n_jobs))
+            try:
+                for i, dt in enumerate(tqdm(delta_t_list, desc=f"{pulse} Δt", unit="dt", leave=False)):
+                    if stop and stop():
+                        ex.shutdown(wait=False, cancel_futures=True)
+                        if status_cb:
+                            try:
+                                status_cb(f"[STOP] Requested while queuing dt tasks ({pulse})")
+                            except Exception:
+                                pass
+                        return None
+                    for j, dV in enumerate(delta_V_list):
+                        tasks.append(((i, j), ex.submit(
+                            EO._one_shot_exchange,
+                            (
+                                cfg.J_offset, V, pulse,
+                                cfg.t_rise, cfg.t_fall, cfg.tau,
+                                cfg.theta1, cfg.theta2, cfg.theta3, cfg.theta4,
+                                0, 0, 0,
+                                cfg.T, cfg.N,
+                                Umat,
+                                segments,
+                                False, True, False,
+                                cfg.alpha,
+                                dV,
+                                dt,
+                            )
+                        )))
+                for (i, j), fut in tasks:
+                    if stop and stop():
+                        ex.shutdown(wait=False, cancel_futures=True)
+                        if status_cb:
+                            try:
+                                status_cb(f"[STOP] Requested while awaiting tasks ({pulse})")
+                            except Exception:
+                                pass
+                        return None
+                    _, fid, _, _, _ = fut.result()
+                    inf_map[i, j] = 1 - fid
+            finally:
+                ex.shutdown(wait=True)
+        else:
+            for i, dt in enumerate(tqdm(delta_t_list, desc=f"{pulse} Δt", unit="dt", leave=False)):
+                if stop and stop():
+                    if status_cb:
+                        try:
+                            status_cb(f"[STOP] Requested at dt loop ({pulse})")
+                        except Exception:
+                            pass
+                    return None
+                for j, dV in enumerate(delta_V_list):
+                    if stop and stop():
+                        if status_cb:
+                            try:
+                                status_cb(f"[STOP] Requested at dV loop ({pulse})")
+                            except Exception:
+                                pass
+                        return None
+                    _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
+                        J_offset=cfg.J_offset,
+                        V1=V, V2=V,
+                        theta1=cfg.theta1,
+                        theta2=cfg.theta2,
+                        theta3=cfg.theta3,
+                        theta4=cfg.theta4,
+                        alpha=cfg.alpha,
+                        deltaV=dV,
+                        deltat=dt,
+                        pulse_type=pulse,
+                        t_rise=cfg.t_rise,
+                        t_fall=cfg.t_fall,
+                        tau=cfg.tau,
+                        white_amp=0,
+                        pink_amp=0,
+                        sigma_jitter=0,
+                        plot_pulse=False,
+                        plot_bloch=False,
+                        T=cfg.T,
+                        N=cfg.N,
+                    )
+                    inf_map[i, j] = 1 - fid
         maps[pulse] = inf_map
 
     np.savez(file, infidelity_maps=maps, delta_t_list=delta_t_list, delta_V_list=delta_V_list)
@@ -169,6 +331,9 @@ def run_test_gates_heatmaps(
     cfg_base,
     delta_t_list,
     delta_V_list,
+    n_jobs=None,
+    status_cb=None,
+    stop=None,
 ):
     """
     Run heatmap-style infidelity sweeps for all gates in GATE_LIBRARY.
@@ -189,168 +354,380 @@ def run_test_gates_heatmaps(
     V = np.log(cfg_base.J / cfg_base.J_offset) / (2 * cfg_base.alpha)
     pulse_types = ["square", "linear", "RC"]
 
-    outfile =test_root/ f"gate_thresholds_J={cfg_base.J/1e6:.0f}MHz.txt" 
-    threshold = 1e-4
+    # Compute and store 1D heatmaps per gate without writing threshold text here
+    for gate_name in tqdm(GATE_LIBRARY.keys(), leave=False):
+        if stop and stop():
+            if status_cb:
+                try:
+                    status_cb(f"[STOP] Requested before gate {gate_name}")
+                except Exception:
+                    pass
+            return
+        angles = get_gate_angles(gate_name)
 
-    RESOLUTION_LIBRARY = {
-    key: PulseResolutions(
-        square=Resolution(time=0.0, voltage=0.0),
-        linear=Resolution(time=0.0, voltage=0.0),
-        RC=Resolution(time=0.0, voltage=0.0),
-    )
-    for key in GATE_LIBRARY
-    }
+        cfg = ExperimentConfig(
+            J=cfg_base.J,
+            J_offset=cfg_base.J_offset,
+            alpha=cfg_base.alpha,
+            theta1=angles.theta1,
+            theta2=angles.theta2,
+            theta3=angles.theta3,
+            theta4=angles.theta4,
+            t_rise=cfg_base.t_rise,
+            t_fall=cfg_base.t_fall,
+            tau=cfg_base.tau,
+            T=cfg_base.T,
+            N=cfg_base.N,
+            deltaV=0.0,
+            deltat=0.0,
+        )
 
+        dirs = experiment_dirs(test_root, cfg, gate_name)
 
-    with open(outfile, "w") as f: 
-        f.write(f"# Gate threshold test\n") 
-        f.write(f"# Infidelity thr : {threshold:.1e}\n\n")
+        heatmap_file = dirs["data"] / "heatmaps_1D.npz"
+        if heatmap_file.exists():
+            msg = f"[SKIP] Heatmaps already exist for gate {gate_name}"
+            print(msg)
+            if status_cb:
+                try:
+                    status_cb(msg)
+                except Exception:
+                    pass
+            continue
 
-        for gate_name in tqdm(GATE_LIBRARY.keys(), leave=False):
+        inf_maps_dt = {}
+        inf_maps_dV = {}
 
-            f.write(f"GATE {gate_name}\n") 
-            f.write("-" * 50 + "\n")
-            
-            angles = get_gate_angles(gate_name)
-
-            cfg = ExperimentConfig(
-                J=cfg_base.J,
-                J_offset=cfg_base.J_offset,
-                alpha=cfg_base.alpha,
-                theta1=angles.theta1,
-                theta2=angles.theta2,
-                theta3=angles.theta3,
-                theta4=angles.theta4,
-                t_rise=cfg_base.t_rise,
-                t_fall=cfg_base.t_fall,
-                tau=cfg_base.tau,
-                T=cfg_base.T,
-                N=cfg_base.N,
-                deltaV=0.0,
-                deltat=0.0,
-            )
-
-            dirs = experiment_dirs(test_root, cfg, gate_name)
-
-            heatmap_file = dirs["data"] / "heatmaps_1D.npz"
-            if heatmap_file.exists():
-                print(f"[SKIP] Heatmaps already exist for gate {gate_name}")
-                continue
-
-            inf_maps_dt = {}
-            inf_maps_dV = {}
-
-            # --------------------------------------------------
-            # Δt sweep (ΔV = 0)
-            # --------------------------------------------------
-            print(f"[GATE {gate_name}] Simulation for delta V = 0")
-            for pulse in pulse_types:
+        # --------------------------------------------------
+        # Δt sweep (ΔV = 0)
+        # --------------------------------------------------
+        msg = f"[GATE {gate_name}] Simulation for delta V = 0"
+        print(msg)
+        if status_cb:
+            try:
+                status_cb(msg)
+            except Exception:
+                pass
+        for pulse in pulse_types:
+                if stop and stop():
+                    return
                 inf_list = np.zeros(len(delta_t_list))
-                found = False
 
-                for i, dt in enumerate(delta_t_list):
-                    _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
-                            J_offset=cfg.J_offset,
-                            V1=V,
-                            V2=V,
-                            theta1=cfg.theta1,
-                            theta2=cfg.theta2,
-                            theta3=cfg.theta3,
-                            theta4=cfg.theta4,
-                            alpha=cfg.alpha,
-                            deltaV=0.0,
-                            deltat=dt,
-                            pulse_type=pulse,
-                            t_rise=cfg.t_rise,
-                            t_fall=cfg.t_fall,
-                            tau=cfg.tau,
-                            white_amp=0,
-                            pink_amp=0,
-                            sigma_jitter=0,
-                            plot_pulse=False,
-                            plot_bloch=False,
-                            T=cfg.T,
-                            N=cfg.N,
-                        )
-                    inf_list[i] = 1 - fid
-                    if inf_list[i] > threshold:
-                        scale = 1e12 
-                        unit = "ps"
-                        f.write( f"First failure at delta T = " f"{dt * scale:.3f} {unit} for {pulse}\n" ) 
-                        f.write( f"Infidelity : {inf_list[i]:.6e}\n\n" ) 
-                        getattr(RESOLUTION_LIBRARY[gate_name], pulse).time = dt
-                        print(f"[GATE {gate_name}] Found simulation for delta V = 0")
-                        found = True 
-                        break 
-                    
-                if not found: 
-                    f.write("No failure in sweep range\n\n")
-                    print(f"[GATE {gate_name}] Not found simulation for delta V = 0")
-                        
+                # Precompute segments and U_ideal_T once per pulse
+                J12_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+                J23_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+                t = np.zeros(4)
+                if pulse == 'square':
+                    t[0] = cfg.theta1/J23_amp_id
+                    t[1] = cfg.theta2/J12_amp_id
+                    t[2] = cfg.theta3/J23_amp_id
+                    t[3] = cfg.theta4/J12_amp_id
+                    t_total = sum(t)
+                elif pulse == 'linear':
+                    def objective_lin(theta):
+                        def compute_time(theta_val):
+                            if theta_val == 0:
+                                return 0.0
+                            def obj(tconst):
+                                t_end = cfg.t_rise + tconst + cfg.t_fall
+                                return EO.I_total(t_end, V, cfg.t_rise, cfg.t_fall, cfg.J_offset, cfg.alpha, 0, 'linear') - theta_val
+                            t_const = brentq(obj, 0, 1)
+                            return cfg.t_rise + t_const + cfg.t_fall
+                        return compute_time(theta)
+                    t[0] = objective_lin(cfg.theta1)
+                    t[1] = objective_lin(cfg.theta2)
+                    t[2] = objective_lin(cfg.theta3)
+                    t[3] = objective_lin(cfg.theta4)
+                    t_total = np.sum(t)
+                elif pulse == 'RC':
+                    def objective_rc(theta):
+                        def compute_time(theta_val):
+                            if theta_val == 0:
+                                return 0.0
+                            def obj(tconst):
+                                t_end = tconst + 14*cfg.tau
+                                return EO.I_total(t_end, V, 0, 0, cfg.J_offset, cfg.alpha, cfg.tau, 'RC') - theta_val
+                            t_const = brentq(obj, 0, 1)
+                            return t_const + 14*cfg.tau
+                        return compute_time(theta)
+                    t[0] = objective_rc(cfg.theta1)
+                    t[1] = objective_rc(cfg.theta2)
+                    t[2] = objective_rc(cfg.theta3)
+                    t[3] = objective_rc(cfg.theta4)
+                    t_total = np.sum(t)
+
+                segments = {
+                    't': t,
+                    't_total': t_total,
+                    't_start1': 1e-9, 't_end1': t[0] + 1e-9,
+                    't_start2': t[0] + 1e-9, 't_end2': t[0] + t[1] + 1e-9,
+                    't_start3': t[0] + t[1] + 1e-9, 't_end3': t[0] + t[1] + t[2] + 1e-9,
+                    't_start4': t[0] + t[1] + t[2] + 1e-9, 't_end4': t[0] + t[1] + t[2] + t[3] + 1e-9,
+                }
+
+                _, _, _, _, U_ideal_T = EO.run_exchange_qubit_simulation(
+                    J_offset=cfg.J_offset,
+                    V1=V,
+                    V2=V,
+                    theta1=cfg.theta1,
+                    theta2=cfg.theta2,
+                    theta3=cfg.theta3,
+                    theta4=cfg.theta4,
+                    alpha=cfg.alpha,
+                    deltaV=0.0,
+                    deltat=0.0,
+                    pulse_type=pulse,
+                    t_rise=cfg.t_rise,
+                    t_fall=cfg.t_fall,
+                    tau=cfg.tau,
+                    white_amp=0,
+                    pink_amp=0,
+                    sigma_jitter=0,
+                    plot_pulse=False,
+                    plot_bloch=False,
+                    T=cfg.T,
+                    N=cfg.N,
+                    segments=segments,
+                    compute_state=False,
+                    compute_operator=False,
+                    compute_qpt=False,
+                )
+                Umat = U_ideal_T.full()
+
+                # Parallel compute over dt at dV=0
+                if n_jobs and n_jobs > 1:
+                    from concurrent.futures import ProcessPoolExecutor
+                    ex = ProcessPoolExecutor(max_workers=int(n_jobs))
+                    try:
+                        futures = []
+                        for i, dt in enumerate(delta_t_list):
+                            futures.append((i, ex.submit(
+                                EO._one_shot_exchange,
+                                (
+                                    cfg.J_offset, V, pulse,
+                                    cfg.t_rise, cfg.t_fall, cfg.tau,
+                                    cfg.theta1, cfg.theta2, cfg.theta3, cfg.theta4,
+                                    0, 0, 0,
+                                    cfg.T, cfg.N,
+                                    Umat,
+                                    segments,
+                                    False, True, False,
+                                    cfg.alpha,
+                                    0.0,
+                                    dt,
+                                )
+                            )))
+                        for idx, fut in futures:
+                            _, fid, _, _, _ = fut.result()
+                            inf_list[idx] = 1 - fid
+                    finally:
+                        ex.shutdown(wait=True)
+                else:
+                    for i, dt in enumerate(delta_t_list):
+                        if stop and stop():
+                            break
+                        _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
+                                J_offset=cfg.J_offset,
+                                V1=V,
+                                V2=V,
+                                theta1=cfg.theta1,
+                                theta2=cfg.theta2,
+                                theta3=cfg.theta3,
+                                theta4=cfg.theta4,
+                                alpha=cfg.alpha,
+                                deltaV=0.0,
+                                deltat=dt,
+                                pulse_type=pulse,
+                                t_rise=cfg.t_rise,
+                                t_fall=cfg.t_fall,
+                                tau=cfg.tau,
+                                white_amp=0,
+                                pink_amp=0,
+                                sigma_jitter=0,
+                                plot_pulse=False,
+                                plot_bloch=False,
+                                T=cfg.T,
+                                N=cfg.N,
+                            )
+                        inf_list[i] = 1 - fid
+
                 inf_maps_dt[pulse] = inf_list
 
-            # --------------------------------------------------
-            # ΔV sweep (Δt = 0)
-            # --------------------------------------------------
-            print(f"[GATE {gate_name}] Simulation for delta t = 0")
+        # --------------------------------------------------
+        # ΔV sweep (Δt = 0)
+        # --------------------------------------------------
+        msg = f"[GATE {gate_name}] Simulation for delta t = 0"
+        print(msg)
+        if status_cb:
+            try:
+                status_cb(msg)
+            except Exception:
+                pass
 
-            for pulse in pulse_types:
+        for pulse in pulse_types:
+                if stop and stop():
+                    return
                 inf_list = np.zeros(len(delta_V_list))
-                found = False
 
-                for i, dV in enumerate(delta_V_list):
-                    _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
-                            J_offset=cfg.J_offset,
-                            V1=V,
-                            V2=V,
-                            theta1=cfg.theta1,
-                            theta2=cfg.theta2,
-                            theta3=cfg.theta3,
-                            theta4=cfg.theta4,
-                            alpha=cfg.alpha,
-                            deltaV=dV,
-                            deltat=0.0,
-                            pulse_type=pulse,
-                            t_rise=cfg.t_rise,
-                            t_fall=cfg.t_fall,
-                            tau=cfg.tau,
-                            white_amp=0,
-                            pink_amp=0,
-                            sigma_jitter=0,
-                            plot_pulse=False,
-                            plot_bloch=False,
-                            T=cfg.T,
-                            N=cfg.N,
-                        )
-                    inf_list[i] = 1 - fid
-                    if inf_list[i] > threshold:
-                        scale = 1e6
-                        unit = "uV"
-                        f.write( f"First failure at delta V = " f"{dV * scale:.3f} {unit} for {pulse}\n" ) 
-                        f.write( f"Infidelity : {inf_list[i]:.6e}\n\n" ) 
-                        print(f"[GATE {gate_name}] Found simulation for delta t = 0")
-                        found = True 
-                        getattr(RESOLUTION_LIBRARY[gate_name], pulse).voltage = dV
-                        break 
-                    
-                if not found: 
-                    f.write("No failure in sweep range\n\n")
-                    print(f"[GATE {gate_name}] Not found simulation for delta t = 0")
-                        
+                # Reuse segments and U_ideal_T from above block per pulse
+                J12_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+                J23_amp_id = np.exp(2*cfg.alpha*(V)) * cfg.J_offset * 2*np.pi
+                t = np.zeros(4)
+                if pulse == 'square':
+                    t[0] = cfg.theta1/J23_amp_id
+                    t[1] = cfg.theta2/J12_amp_id
+                    t[2] = cfg.theta3/J23_amp_id
+                    t[3] = cfg.theta4/J12_amp_id
+                    t_total = sum(t)
+                elif pulse == 'linear':
+                    def objective_lin(theta):
+                        def compute_time(theta_val):
+                            if theta_val == 0:
+                                return 0.0
+                            def obj(tconst):
+                                t_end = cfg.t_rise + tconst + cfg.t_fall
+                                return EO.I_total(t_end, V, cfg.t_rise, cfg.t_fall, cfg.J_offset, cfg.alpha, 0, 'linear') - theta_val
+                            t_const = brentq(obj, 0, 1)
+                            return cfg.t_rise + t_const + cfg.t_fall
+                        return compute_time(theta)
+                    t[0] = objective_lin(cfg.theta1)
+                    t[1] = objective_lin(cfg.theta2)
+                    t[2] = objective_lin(cfg.theta3)
+                    t[3] = objective_lin(cfg.theta4)
+                    t_total = np.sum(t)
+                elif pulse == 'RC':
+                    def objective_rc(theta):
+                        def compute_time(theta_val):
+                            if theta_val == 0:
+                                return 0.0
+                            def obj(tconst):
+                                t_end = tconst + 14*cfg.tau
+                                return EO.I_total(t_end, V, 0, 0, cfg.J_offset, cfg.alpha, cfg.tau, 'RC') - theta_val
+                            t_const = brentq(obj, 0, 1)
+                            return t_const + 14*cfg.tau
+                        return compute_time(theta)
+                    t[0] = objective_rc(cfg.theta1)
+                    t[1] = objective_rc(cfg.theta2)
+                    t[2] = objective_rc(cfg.theta3)
+                    t[3] = objective_rc(cfg.theta4)
+                    t_total = np.sum(t)
+
+                segments = {
+                    't': t,
+                    't_total': t_total,
+                    't_start1': 1e-9, 't_end1': t[0] + 1e-9,
+                    't_start2': t[0] + 1e-9, 't_end2': t[0] + t[1] + 1e-9,
+                    't_start3': t[0] + t[1] + 1e-9, 't_end3': t[0] + t[1] + t[2] + 1e-9,
+                    't_start4': t[0] + t[1] + t[2] + 1e-9, 't_end4': t[0] + t[1] + t[2] + t[3] + 1e-9,
+                }
+
+                _, _, _, _, U_ideal_T = EO.run_exchange_qubit_simulation(
+                    J_offset=cfg.J_offset,
+                    V1=V,
+                    V2=V,
+                    theta1=cfg.theta1,
+                    theta2=cfg.theta2,
+                    theta3=cfg.theta3,
+                    theta4=cfg.theta4,
+                    alpha=cfg.alpha,
+                    deltaV=0.0,
+                    deltat=0.0,
+                    pulse_type=pulse,
+                    t_rise=cfg.t_rise,
+                    t_fall=cfg.t_fall,
+                    tau=cfg.tau,
+                    white_amp=0,
+                    pink_amp=0,
+                    sigma_jitter=0,
+                    plot_pulse=False,
+                    plot_bloch=False,
+                    T=cfg.T,
+                    N=cfg.N,
+                    segments=segments,
+                    compute_state=False,
+                    compute_operator=False,
+                    compute_qpt=False,
+                )
+                Umat = U_ideal_T.full()
+
+                if n_jobs and n_jobs > 1:
+                    from concurrent.futures import ProcessPoolExecutor
+                    ex = ProcessPoolExecutor(max_workers=int(n_jobs))
+                    try:
+                        futures = []
+                        for i, dV in enumerate(delta_V_list):
+                            futures.append((i, ex.submit(
+                                EO._one_shot_exchange,
+                                (
+                                    cfg.J_offset, V, pulse,
+                                    cfg.t_rise, cfg.t_fall, cfg.tau,
+                                    cfg.theta1, cfg.theta2, cfg.theta3, cfg.theta4,
+                                    0, 0, 0,
+                                    cfg.T, cfg.N,
+                                    Umat,
+                                    segments,
+                                    False, True, False,
+                                    cfg.alpha,
+                                    dV,
+                                    0.0,
+                                )
+                            )))
+                        for idx, fut in futures:
+                            _, fid, _, _, _ = fut.result()
+                            inf_list[idx] = 1 - fid
+                    finally:
+                        ex.shutdown(wait=True)
+                else:
+                    for i, dV in enumerate(delta_V_list):
+                        if stop and stop():
+                            break
+                        _, fid, _, _, _ = EO.run_exchange_qubit_simulation(
+                                J_offset=cfg.J_offset,
+                                V1=V,
+                                V2=V,
+                                theta1=cfg.theta1,
+                                theta2=cfg.theta2,
+                                theta3=cfg.theta3,
+                                theta4=cfg.theta4,
+                                alpha=cfg.alpha,
+                                deltaV=dV,
+                                deltat=0.0,
+                                pulse_type=pulse,
+                                t_rise=cfg.t_rise,
+                                t_fall=cfg.t_fall,
+                                tau=cfg.tau,
+                                white_amp=0,
+                                pink_amp=0,
+                                sigma_jitter=0,
+                                plot_pulse=False,
+                                plot_bloch=False,
+                                T=cfg.T,
+                                N=cfg.N,
+                            )
+                        inf_list[i] = 1 - fid
+
                 inf_maps_dV[pulse] = inf_list
 
-            np.savez(
-                    heatmap_file,
-                    infidelity_dt=inf_maps_dt,
-                    infidelity_dV=inf_maps_dV,
-                    delta_t_list=delta_t_list,
-                    delta_V_list=delta_V_list,
-                )
+        np.savez(
+                heatmap_file,
+                infidelity_dt=inf_maps_dt,
+                infidelity_dV=inf_maps_dV,
+                delta_t_list=delta_t_list,
+                delta_V_list=delta_V_list,
+            )
 
-        print(f"[DONE] Stored heatmaps for gate {gate_name}")
+        msg = f"[DONE] Stored heatmaps for gate {gate_name}"
+        print(msg)
+        if status_cb:
+            try:
+                status_cb(msg)
+            except Exception:
+                pass
+
+    # Threshold plots are handled in plot.py via runner; no plotting here
 
 # ---- Jitter noise ----
-def run_jitter(cfg, dirs, iterations=50, n_jobs=None):
+def run_jitter(cfg, dirs, sigma_jitters, iterations=50, n_jobs=None):
     file = dirs["data"] / "jitter.npz"
     if file.exists():
         return file
@@ -359,6 +736,7 @@ def run_jitter(cfg, dirs, iterations=50, n_jobs=None):
     EO.simulate_infidelity_jitter(
         V=V,
         alpha=cfg.alpha,
+        sigma_jitters=sigma_jitters,
         J_offset=cfg.J_offset,
         theta1=cfg.theta1,
         theta2=cfg.theta2,
@@ -521,3 +899,4 @@ def merge_noise_results(dirs):
 
     np.savez(path_c, **save_dict)
     return path_c
+
