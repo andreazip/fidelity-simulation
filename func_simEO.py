@@ -11,6 +11,8 @@ from pathlib import Path
 import re
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pickle import PicklingError
+import threading
+import sys
 
 def _one_shot_exchange(args):
     """Worker-friendly shot wrapper.
@@ -63,6 +65,23 @@ def _one_shot_exchange(args):
         compute_operator=compute_operator,
         compute_qpt=compute_qpt,
     )
+
+def _make_executor(n_jobs):
+    """Select a safe executor for the current environment.
+
+    When running under Streamlit or from a non-main thread, use threads to avoid
+    Windows pickling issues. Otherwise, use processes for speed.
+    """
+    if not (n_jobs and n_jobs > 1):
+        return None
+    try:
+        if threading.current_thread() is not threading.main_thread():
+            return ThreadPoolExecutor(max_workers=int(n_jobs))
+        if 'streamlit' in sys.modules:
+            return ThreadPoolExecutor(max_workers=int(n_jobs))
+        return ProcessPoolExecutor(max_workers=int(n_jobs))
+    except Exception:
+        return ThreadPoolExecutor(max_workers=int(n_jobs))
 
 
 PPT_STYLE = {
@@ -921,7 +940,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
             fidelities_state = []
             fidelities_qpt = []
             Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = ProcessPoolExecutor(max_workers=int(n_jobs)) if (n_jobs and n_jobs > 1) else None
+            ex = _make_executor(n_jobs)
             try:
                 # Outer iterations: average over inner averaged S
                 for _ in range(iterations):
@@ -1050,7 +1069,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
             fidelities_state = []
             fidelities_qpt = []
             Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = ProcessPoolExecutor(max_workers=int(n_jobs)) if (n_jobs and n_jobs > 1) else None
+            ex = _make_executor(n_jobs)
             try:
                 for _ in range(iterations):
                     S_accum = []
@@ -1310,7 +1329,7 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
             fidelities_state = []
             fidelities_qpt = []
             Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = ProcessPoolExecutor(max_workers=int(n_jobs)) if (n_jobs and n_jobs > 1) else None
+            ex = _make_executor(n_jobs)
             try:
                 for _ in range(iterations):
                     S_accum = []

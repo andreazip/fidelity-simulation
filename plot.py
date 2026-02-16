@@ -214,10 +214,10 @@ def plot_infidelity_vs_noise(
         # ================= WHITE NOISE PLOT =================
         if (inf_white is not None) and (white_amps.size > 0):
             for pulse in pulse_types:
-                
+
                 y = inf_white[pulse]
                 dy = std_white[pulse]
-                print(y)
+                
                 plt.plot(
                     N0_array,
                     y,

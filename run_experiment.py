@@ -23,12 +23,12 @@ RUN = {
     "fidelities": False,
     "heatmaps": False,
     "heatmaps_all": False,
-    "jitter": True,
+    "jitter": False,
     "white_noise": True,     # run white-only
     "pink_noise": True,      # run pink-only
     "noise": True,           # combined plots
 }
-PLOT_ONLY = True
+PLOT_ONLY = False
 
 """
 Batch controls
@@ -51,7 +51,7 @@ tau = 0.1e-9
 DT_PS = 15  # desired time resolution in picoseconds
 
 # Noise sweeps
-alpha_list = [25, 12.5]
+alpha_list = [12.5]
 Joffset_list = [100e3, 10e3]
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
 # Iterations (outer for averaging QPT of averaged S)
@@ -63,7 +63,7 @@ delta_V_range = 0.2e-3
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 1  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 4  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
@@ -437,9 +437,20 @@ def main():
                                 if should_stop():
                                     status(f"[STATE {state_counter}] Stop before combined noise for {GATE}, J={J/1e6:.0f}MHz")
                                     return
-                                status(f"[STATE {state_counter}] Running combined noise for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
+                                # Avoid duplicating sweeps: if white or pink were already selected/run,
+                                # generate only the missing side, then merge.
                                 w_amps, p_amps = _amp_arrays_for_alpha(alpha_val)
-                                n_file = run_noise(cfg_loop, dirs_loop, w_amps, p_amps, iterations=iterations, n_jobs=N_JOBS)
+                                if RUN.get("white_noise") and white_path.exists() and not pink_path.exists():
+                                    status(f"[STATE {state_counter}] Combined: generating pink-only to merge with existing white for {GATE}, J={J/1e6:.0f}MHz")
+                                    n_file_p = run_pink_noise_only(cfg_loop, dirs_loop, p_amps, iterations=iterations, n_jobs=N_JOBS)
+                                    n_file = merge_noise_results(dirs_loop) or n_file_p
+                                elif RUN.get("pink_noise") and pink_path.exists() and not white_path.exists():
+                                    status(f"[STATE {state_counter}] Combined: generating white-only to merge with existing pink for {GATE}, J={J/1e6:.0f}MHz")
+                                    n_file_w = run_white_noise_only(cfg_loop, dirs_loop, w_amps, iterations=iterations, n_jobs=N_JOBS)
+                                    n_file = merge_noise_results(dirs_loop) or n_file_w
+                                else:
+                                    status(f"[STATE {state_counter}] Running combined noise (both sweeps) for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
+                                    n_file = run_noise(cfg_loop, dirs_loop, w_amps, p_amps, iterations=iterations, n_jobs=N_JOBS)
                             else:
                                 missing = []
                                 if not white_path.exists():
