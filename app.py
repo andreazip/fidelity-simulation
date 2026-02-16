@@ -3,6 +3,36 @@ from pathlib import Path
 import traceback
 import threading
 import time
+import logging
+
+# Suppress Streamlit's bare-mode warning about missing ScriptRunContext
+_sr_logger = logging.getLogger("streamlit.runtime.scriptrunner_utils.script_run_context")
+class _NoScriptRunContextWarn(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return "missing ScriptRunContext" not in record.getMessage()
+        except Exception:
+            return True
+_sr_logger.addFilter(_NoScriptRunContextWarn())
+
+# Suppress general bare-mode warnings from Streamlit
+_streamlit_logger = logging.getLogger("streamlit")
+_ss_logger = logging.getLogger("streamlit.runtime.state.session_state_proxy")
+class _SuppressBareModeWarn(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            msg = record.getMessage()
+            if "to view a Streamlit app on a browser" in msg:
+                return False
+            if "Session state does not function when running a script without`streamlit run`" in msg:
+                return False
+            if "Session state does not function when running a script without `streamlit run`" in msg:
+                return False
+            return True
+        except Exception:
+            return True
+_streamlit_logger.addFilter(_SuppressBareModeWarn())
+_ss_logger.addFilter(_SuppressBareModeWarn())
 
 import run_experiment as re
 import plot as plot_mod
@@ -180,7 +210,7 @@ with st.sidebar:
     st.subheader("Run Sections")
     run_sections = {}
     for key in [
-        "fidelities",
+        "fidelities", 
         "heatmaps",
         "heatmaps_all",
         "jitter",
@@ -198,6 +228,9 @@ with st.sidebar:
 
     n_jobs = st.number_input("Parallel jobs", min_value=1, max_value=64, value=getattr(re, "N_JOBS", 2))
     dt_ps = st.number_input("DT_PS (ps)", min_value=1, max_value=1000, value=getattr(re, "DT_PS", 15))
+    iterations = st.number_input("Iterations per amplitude", min_value=1, max_value=10000, value=getattr(re, "iterations", 5))
+    n_noise = st.number_input("Noise amplitude points (N_noise)", min_value=1, max_value=10000, value=getattr(re, "N_noise", 10))
+    n_space = st.number_input("Heatmap grid size (N_space)", min_value=1, max_value=10000, value=getattr(re, "N_space", 25))
 
     alpha_base_input = st.number_input("alpha (base)", min_value=0.0, max_value=1000.0, value=float(getattr(re, "alpha", 25)), step=0.1)
     alpha_base = coerce_alpha_value(alpha_base_input)
@@ -235,18 +268,23 @@ if run_btn and not st.session_state["running"]:
         re.J_VALUES = j_values if j_values else getattr(re, "J_VALUES", [])
         re.N_JOBS = int(n_jobs)
         re.DT_PS = int(dt_ps)
+        re.iterations = int(iterations)
+        re.N_noise = int(n_noise)
+        re.N_space = int(n_space)
         # Preserve integer alpha when integral; else use one-decimal float
         re.alpha = alpha_base if isinstance(alpha_base, int) else float(alpha_base)
         re.alpha_list = [a for a in alpha_list_vals] if alpha_list_vals else getattr(re, "alpha_list", [])
         re.Joffset_list = joff_list_vals if joff_list_vals else getattr(re, "Joffset_list", [])
         # Reset and trim status log
         st.session_state["status_log"] = []
-        def _cb(msg: str):
-            st.session_state["status_log"].append(msg)
-            # Trim to last 100 to bound memory
-            if len(st.session_state["status_log"]) > 100:
-                st.session_state["status_log"] = st.session_state["status_log"][-100:]
+        # Avoid calling Streamlit APIs from background thread: use direct list appends
         re.STATUS_LOG = st.session_state["status_log"]
+        def _cb(msg: str):
+            re.STATUS_LOG.append(msg)
+            # Trim to last 100 to bound memory
+            if len(re.STATUS_LOG) > 100:
+                # Slice in place to keep same list object reference
+                del re.STATUS_LOG[:-100]
         re.STATUS_CALLBACK = _cb
         re.STOP_REQUESTED = False
 
@@ -254,12 +292,12 @@ if run_btn and not st.session_state["running"]:
             try:
                 re.main()
             finally:
-                st.session_state["running"] = False
+                # Do not call Streamlit APIs from background thread
                 try:
                     re.status("Simulation finished.")
                 except Exception:
                     try:
-                        st.session_state.setdefault("status_log", []).append("Simulation finished.")
+                        re.STATUS_LOG.append("Simulation finished.")
                     except Exception:
                         pass
 

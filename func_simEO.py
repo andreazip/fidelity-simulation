@@ -9,7 +9,8 @@ from tqdm import tqdm
 from matplotlib.colors import LogNorm
 from pathlib import Path
 import re
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
+from pickle import PicklingError
 
 def _one_shot_exchange(args):
     """Worker-friendly shot wrapper.
@@ -929,24 +930,47 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                     fs_accum = []
 
                     if ex is not None:
-                        futures = [
-                            ex.submit(
-                                _one_shot_exchange,
-                                (
-                                    J_offset, V, pulse,
-                                    t_rise, t_fall, tau,
-                                    theta1, theta2, theta3, theta4,
-                                    w_amp, 0, 0,
-                                    T, N,
-                                    Umat,
-                                    segments,
-                                    compute_state, compute_operator, compute_qpt,
-                                    alpha,
-                                    0,
-                                    0,
-                                ),
-                            ) for __ in range(iterations)
-                        ]
+                        try:
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        w_amp, 0, 0,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
+                        except (PicklingError, Exception):
+                            # Fallback to threads if processes cannot pickle
+                            ex.shutdown(wait=True)
+                            ex = ThreadPoolExecutor(max_workers=int(n_jobs))
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        w_amp, 0, 0,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
                         for fut in as_completed(futures):
                             fid_state, fid_op, _, S_q, _ = fut.result()
                             if compute_operator:
@@ -1034,24 +1058,46 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                     fs_accum = []
 
                     if ex is not None:
-                        futures = [
-                            ex.submit(
-                                _one_shot_exchange,
-                                (
-                                    J_offset, V, pulse,
-                                    t_rise, t_fall, tau,
-                                    theta1, theta2, theta3, theta4,
-                                    0, p_amp, 0,
-                                    T, N,
-                                    Umat,
-                                    segments,
-                                    compute_state, compute_operator, compute_qpt,
-                                    alpha,
-                                    0,
-                                    0,
-                                ),
-                            ) for __ in range(iterations)
-                        ]
+                        try:
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        0, p_amp, 0,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
+                        except (PicklingError, Exception):
+                            ex.shutdown(wait=True)
+                            ex = ThreadPoolExecutor(max_workers=int(n_jobs))
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        0, p_amp, 0,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
                         for fut in as_completed(futures):
                             fid_state, fid_op, _, S_q, _ = fut.result()
                             if compute_operator:
@@ -1272,24 +1318,46 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
                     fs_accum = []
 
                     if ex is not None:
-                        futures = [
-                            ex.submit(
-                                _one_shot_exchange,
-                                (
-                                    J_offset, V, pulse,
-                                    t_rise, t_fall, tau,
-                                    theta1, theta2, theta3, theta4,
-                                    0, 0, sigma_j,
-                                    T, N,
-                                    Umat,
-                                    segments,
-                                    compute_state, compute_operator, compute_qpt,
-                                    alpha,
-                                    0,
-                                    0,
-                                ),
-                            ) for __ in range(iterations)
-                        ]
+                        try:
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        0, 0, sigma_j,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
+                        except (PicklingError, Exception):
+                            ex.shutdown(wait=True)
+                            ex = ThreadPoolExecutor(max_workers=int(n_jobs))
+                            futures = [
+                                ex.submit(
+                                    _one_shot_exchange,
+                                    (
+                                        J_offset, V, pulse,
+                                        t_rise, t_fall, tau,
+                                        theta1, theta2, theta3, theta4,
+                                        0, 0, sigma_j,
+                                        T, N,
+                                        Umat,
+                                        segments,
+                                        compute_state, compute_operator, compute_qpt,
+                                        alpha,
+                                        0,
+                                        0,
+                                    ),
+                                ) for __ in range(iterations)
+                            ]
                         for fut in as_completed(futures):
                             fid_state, fid_op, _, S_q, _ = fut.result()
                             if compute_operator:

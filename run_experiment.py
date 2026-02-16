@@ -18,7 +18,7 @@ from gate_library import get_gate_angles, get_gate_defaults
 
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
-FORCE_EVALUATION = True
+FORCE_EVALUATION = False
 RUN = {
     "fidelities": False,
     "heatmaps": False,
@@ -53,17 +53,17 @@ DT_PS = 15  # desired time resolution in picoseconds
 # Noise sweeps
 alpha_list = [25, 12.5]
 Joffset_list = [100e3, 10e3]
-N_noise = 5  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
+N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
 # Iterations (outer for averaging QPT of averaged S)
-iterations = 2
+iterations = 5
 
 #heatmap sweeps
 delta_t_range = 200e-12
 delta_V_range = 0.2e-3
-N_space = 5
+N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 6  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 1  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
@@ -360,7 +360,6 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before white-noise plotting for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                             return
-                        print(alpha)
                         plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file_w, N, T, deltaV, J, GATE, SAVE_DIR=dirs_loop["noise"])
                         status(f"[STATE {state_counter}] Completed white-noise: {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                         state_counter += 1
