@@ -23,7 +23,7 @@ RUN = {
     "fidelities": False,
     "heatmaps": False,
     "heatmaps_all": False,
-    "jitter": False,
+    "jitter": True,
     "white_noise": True,     # run white-only
     "pink_noise": True,      # run pink-only
     "noise": True,           # combined plots
@@ -63,7 +63,7 @@ delta_V_range = 0.2e-3
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 4  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 6  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
