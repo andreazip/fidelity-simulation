@@ -69,18 +69,14 @@ def _one_shot_exchange(args):
 def _make_executor(n_jobs):
     """Select a safe executor for the current environment.
 
-    When running under Streamlit or from a non-main thread, use threads to avoid
-    Windows pickling issues. Otherwise, use processes for speed.
+    Always prefer process-based parallelism for performance.
     """
     if not (n_jobs and n_jobs > 1):
         return None
     try:
-        if threading.current_thread() is not threading.main_thread():
-            return ThreadPoolExecutor(max_workers=int(n_jobs))
-        if 'streamlit' in sys.modules:
-            return ThreadPoolExecutor(max_workers=int(n_jobs))
         return ProcessPoolExecutor(max_workers=int(n_jobs))
     except Exception:
+        # As a last resort, fall back to threads
         return ThreadPoolExecutor(max_workers=int(n_jobs))
 
 

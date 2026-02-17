@@ -244,8 +244,6 @@ with st.sidebar:
     st.divider()
     st.subheader("Runner Control")
     stop_btn = st.button("Stop Run")
-    refresh_status_btn = st.button("Refresh Status View")
-    auto_refresh = st.checkbox("Auto-refresh status (1s)", value=True)
     st.subheader("Plot Browser")
     gate_sel = st.selectbox("Gate", options=[""] + list(GATE_LIBRARY.keys()), index=0)
     j_sel = st.text_input("J (MHz) for plot", value="")
@@ -275,18 +273,19 @@ if run_btn and not st.session_state["running"]:
         re.alpha = alpha_base if isinstance(alpha_base, int) else float(alpha_base)
         re.alpha_list = [a for a in alpha_list_vals] if alpha_list_vals else getattr(re, "alpha_list", [])
         re.Joffset_list = joff_list_vals if joff_list_vals else getattr(re, "Joffset_list", [])
-        # Reset and trim status log
+        # Reset and use minimal status log (only start/run/finish)
         st.session_state["status_log"] = []
-        # Avoid calling Streamlit APIs from background thread: use direct list appends
         re.STATUS_LOG = st.session_state["status_log"]
-        def _cb(msg: str):
-            re.STATUS_LOG.append(msg)
-            # Trim to last 100 to bound memory
-            if len(re.STATUS_LOG) > 100:
-                # Slice in place to keep same list object reference
-                del re.STATUS_LOG[:-100]
-        re.STATUS_CALLBACK = _cb
+        # Suppress detailed status messages from the runner
+        re.STATUS_CALLBACK = lambda msg: None
         re.STOP_REQUESTED = False
+
+        # Announce start and running
+        try:
+            re.STATUS_LOG.append("Simulation started.")
+            re.STATUS_LOG.append("Simulation running…")
+        except Exception:
+            pass
 
         def _run():
             try:
@@ -294,12 +293,9 @@ if run_btn and not st.session_state["running"]:
             finally:
                 # Do not call Streamlit APIs from background thread
                 try:
-                    re.status("Simulation finished.")
+                    re.STATUS_LOG.append("Simulation finished.")
                 except Exception:
-                    try:
-                        re.STATUS_LOG.append("Simulation finished.")
-                    except Exception:
-                        pass
+                    pass
 
         th = threading.Thread(target=_run, daemon=True)
         th.start()
@@ -317,12 +313,11 @@ if stop_btn and st.session_state["running"]:
     except Exception:
         st.error("Failed to send stop signal.")
 
-if refresh_status_btn:
-    st.info("Status refreshed.")
+# Manual refresh removed; status updates flow from captured prints
 
-st.subheader("Status Log ")
-if st.session_state["status_log"]:
-    for line in st.session_state["status_log"][-5:]:
+st.subheader("Status Log")
+if st.session_state.get("status_log"):
+    for line in st.session_state["status_log"][-50:]:
         st.write(line)
 else:
     st.write("No status yet.")
@@ -333,25 +328,31 @@ if not st.session_state.get("running") and st.session_state.get("status_log"):
     if "simulation finished" in last:
         st.success("Simulation finished.")
 
+# One-time completion rerun to surface final status automatically
+try:
+    th = st.session_state.get("runner_thread")
+    if th is not None and hasattr(th, "is_alive") and not th.is_alive():
+        # Reflect running state
+        if st.session_state.get("running"):
+            st.session_state["running"] = False
+        # Trigger a single rerun after completion to update UI
+        if not st.session_state.get("_completion_rerun_done", False):
+            logs = st.session_state.get("status_log", [])
+            if logs and any("simulation finished" in s.lower() for s in logs[-5:]):
+                st.session_state["_completion_rerun_done"] = True
+                try:
+                    if hasattr(st, "rerun"):
+                        st.rerun()
+                    else:
+                        st.experimental_rerun()
+                except Exception:
+                    pass
+except Exception:
+    pass
+
 # Running indicator and optional auto-refresh
 if st.session_state.get("running"):
     st.info("Simulation running…")
-    if auto_refresh:
-        # Only rerun when new log lines arrive or at interval
-        if "_last_log_len" not in st.session_state:
-            st.session_state["_last_log_len"] = 0
-        current_len = len(st.session_state.get("status_log", []))
-        time.sleep(1)
-        st.session_state["_last_log_len"] = current_len
-        try:
-            # Prefer stable API when available
-            if hasattr(st, "rerun"):
-                st.rerun()
-            else:
-                st.experimental_rerun()
-        except Exception:
-            # If rerun is unavailable, silently skip auto-refresh
-            pass
 else:
     st.caption("Idle")
 

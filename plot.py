@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm  
 from pathlib import Path
 import re
-import logging
 from gate_library import get_gate_angles, GATE_LIBRARY
 
 
@@ -17,26 +16,6 @@ def title_to_filename(title, ext="png"):
     """
     clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
     return clean.lower().strip('_') + f".{ext}"
-
-
-def _figure_has_content(fig: plt.Figure) -> bool:
-    axes = fig.get_axes()
-    if not axes:
-        return False
-    for ax in axes:
-        # ax.has_data() is true if any artists that would be drawn are present
-        if getattr(ax, "has_data", lambda: False)():
-            return True
-        # Fallback checks for common artist containers
-        if len(getattr(ax, "lines", [])):
-            return True
-        if len(getattr(ax, "images", [])):
-            return True
-        if len(getattr(ax, "collections", [])):
-            return True
-        if len(getattr(ax, "patches", [])):
-            return True
-    return False
 
 
 def save_figure(title, folder="figures", ext="png"):
@@ -53,16 +32,10 @@ def save_figure(title, folder="figures", ext="png"):
     #display_title = title.replace('_', ' ').title()
     #plt.title(display_title)
 
-    # Skip saving if figure has no drawable content
-    fig = plt.gcf()
-    if not _figure_has_content(fig):
-        logging.getLogger(__name__).warning(f"[SKIP] Empty figure detected for '{title}', not saving.")
-        plt.close()
-        return
-
     # Save figure with clean filename
-    plt.tight_layout()
-    plt.savefig(folder / title_to_filename(title, ext), dpi=300, bbox_inches="tight")
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300, bbox_inches="tight")
+
     plt.close()
 
 SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\noise"
@@ -240,7 +213,6 @@ def plot_infidelity_vs_noise(
 
         # ================= WHITE NOISE PLOT =================
         if (inf_white is not None) and (white_amps.size > 0):
-            plt.figure(figsize=(16, 9))
             for pulse in pulse_types:
 
                 y = inf_white[pulse]
@@ -289,7 +261,6 @@ def plot_infidelity_vs_noise(
 
         # ================= PINK NOISE PLOT =================
         if (inf_pink is not None) and (pink_amps.size > 0):
-            plt.figure(figsize=(16, 9))
             for pulse in pulse_types:
                 y = inf_pink[pulse]
                 dy = std_pink[pulse]
@@ -726,7 +697,7 @@ def plot_infidelity_heatmaps(
     if plot_individual:
         for pulse_type in pulse_types:
             plt.figure(figsize=(16, 9))
-                im = plt.imshow(
+            im = plt.imshow(
                 np.log10(infidelity_maps[pulse_type]),
                 origin='lower',
                 extent=[
@@ -735,12 +706,18 @@ def plot_infidelity_heatmaps(
                 ],
                 aspect='auto'
             )
-                # Build coordinate grids for proper contour placement
-                Vm = np.array(delta_V_list) * 1e3
-                Tm = np.array(delta_t_list) * 1e12
-                X, Y = np.meshgrid(Vm, Tm)
-                Z = np.log10(infidelity_maps[pulse_type])
-                plt.contour(X, Y, Z, levels=[-4], colors='red', linewidths=2)
+
+            plt.contour(
+                np.log10(infidelity_maps[pulse_type]),
+                levels=[-4],
+                colors='red',
+                linewidths=2,
+                origin='lower',
+                extent=[
+                    delta_V_list[0]*1e3, delta_V_list[-1]*1e3,
+                    delta_t_list[0]*1e12, delta_t_list[-1]*1e12
+                ]
+            )
 
             # Mark resolutions with crosses and legend (scan from 0 outward)
             map_p = infidelity_maps[pulse_type]
