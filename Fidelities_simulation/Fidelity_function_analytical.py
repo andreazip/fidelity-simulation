@@ -23,8 +23,8 @@ def save_figure(title, folder="figures", ext="png"):
     plt.close()
 
 
-SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Infidelities"
-SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results\Infidelities\fixed3"
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Analytical_simulation"
+SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Analytical_simulation\fixed3"
 
 floor_value = 1e-6
 
@@ -230,7 +230,7 @@ def compute_x_x():
 
 def compute_z_n_z_fixed3():
     #Example usage for 3D fidelities (theta2-dependent)
-    theta2 = np.arctan(np.sqrt(8))
+    theta2 = np.pi + np.arctan(np.sqrt(8))
     eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
     eps3_fixed = 4.1e-3 #value used to validate formula
     eps1 = np.linspace(*eps1_range, 150)
@@ -249,7 +249,7 @@ def compute_z_n_z_fixed3():
 
 def compute_z_n_z_fixed2():
     # tuning eps and fixing eps_2
-    theta2 =np.arctan(np.sqrt(8))
+    theta2 =np.pi+np.arctan(np.sqrt(8))
     eps1_range = eps3_range = (-4.1e-3, 4.1e-3)
     eps2_fixed = 4.1e-3
     eps1 = np.linspace(*eps1_range, 150)
@@ -267,7 +267,7 @@ def compute_z_n_z_fixed2():
     
 def compute_z_n_z_fixed3():
     #Example usage for 3D fidelities (theta2-dependent)
-    theta2 = np.arctan(np.sqrt(8))
+    theta2 = np.pi + np.arctan(np.sqrt(8))
     eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
     eps3_fixed = 4.1e-3 #value used to validate formula
     eps1 = np.linspace(*eps1_range, 150)
@@ -286,7 +286,7 @@ def compute_z_n_z_fixed3():
 
 def compute_n_z_n_fixed2():
     # tuning eps and fixing eps_2
-    theta2 =np.arctan(np.sqrt(8))
+    theta2 = np.pi + np.arctan(np.sqrt(8))
     eps1_range = eps3_range = (-4.1e-3, 4.1e-3)
     eps2_fixed = 4.1e-3
     eps1 = np.linspace(*eps1_range, 150)
@@ -304,7 +304,7 @@ def compute_n_z_n_fixed2():
 
 def compute_n_z_n_fixed3():
     #Example usage for 3D fidelities (theta2-dependent)
-    theta2 = np.arctan(np.sqrt(8))
+    theta2 = np.pi+np.arctan(np.sqrt(8))
     eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
     eps3_fixed = 4.1e-3 #value used to validate formula
     eps1 = np.linspace(*eps1_range, 150)
@@ -323,7 +323,7 @@ def compute_n_z_n_fixed3():
 
 def compute_z_z_z_fixed3():
     eps1_range = eps2_range = (-3.33e-3, 3.33e-3)
-    theta2 =np.arctan(np.sqrt(8)) #it is actually not relevant
+    theta2 =np.pi+np.arctan(np.sqrt(8)) #it is actually not relevant
     eps3_fixed = 3.33e-3 #value used to validate formula
     eps1 = np.linspace(*eps1_range, 150)
     eps2 = np.linspace(*eps2_range, 150)
@@ -368,7 +368,7 @@ def worst_case_f(theta2, err_bound):
     return res.fun, res.x  # (min fidelity, argmin parameters)
 
 
-def find_minimal_error_threshold(theta2, target_infidelity=1e-4, e_max=0.5):
+def find_minimal_error_threshold(theta2, target_infidelity=1e-4, e_max=1):
     """
     Find the smallest error amplitude e for which the condition
         1 - F_min(e) > target_infidelity
@@ -425,7 +425,7 @@ def main():
 main()
 
 theta2 = np.arctan(np.sqrt(8)) # example
-#theta2 =np.pi
+#theta2 = np.pi + np.arctan(np.sqrt(8)) # example
 
 e_star, F_min_star, params_star = find_minimal_error_threshold(theta2)
 

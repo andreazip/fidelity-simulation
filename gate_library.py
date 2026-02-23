@@ -219,7 +219,7 @@ GATE_DEFAULTS: dict[str, GateDefaults] = {
     # Based on current experiments
     "Y": GateDefaults(deltat=67e-12, deltaV=83e-6, T=80e-9),
     "X": GateDefaults(deltat=75e-12, deltaV=100e-6, T=60e-9),
-    "SXH": GateDefaults(deltat=75e-12, deltaV=50e-6, T=120e-9),
+    "SXH": GateDefaults(deltat=67e-12, deltaV=42e-6, T=120e-9),
 }
 
 def get_gate_angles(gate: str) -> GateAngles:

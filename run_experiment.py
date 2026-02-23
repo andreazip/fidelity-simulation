@@ -20,15 +20,15 @@ from gate_library import get_gate_angles, get_gate_defaults
 # When True, run all simulations fresh into a new versioned results folder
 FORCE_EVALUATION = False
 RUN = {
-    "fidelities": False,
-    "heatmaps": False,
-    "heatmaps_all": False,
+    "fidelities": True,
+    "heatmaps": True,
+    "heatmaps_all": True,
     "jitter": True,
     "white_noise": True,     # run white-only
     "pink_noise": True,      # run pink-only
     "noise": True,           # combined plots
 }
-PLOT_ONLY = False
+PLOT_ONLY = True
 
 """
 Batch controls
@@ -40,7 +40,7 @@ J_offset = 10e3
 alpha = 25
 
 # Sweep sets
-GATES = ["X", "Y", "SXH"]            # e.g., ["X", "Y", "SXH"]
+GATES = ["SXH"]            # e.g., ["X", "Y", "SXH"]
 J_VALUES = [10e6, 20e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping

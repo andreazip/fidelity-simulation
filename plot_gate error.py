@@ -18,7 +18,7 @@ def save_figure(title, folder="figures", ext="png"):
     plt.close()
 
 
-SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Images_results"
+SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Resolution_analysis"
 
 
 
@@ -100,7 +100,7 @@ def plot_delta_V(theta=None, scale_factor=2500, show_grid=True):
     # Δt_gate plot (left subplot)
  # ----------------------------------------
 
-def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 770, 942], scale_delta_V = [50, 500/7, 250/3, 100, 6250/51, 3748/25]):
+def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628, 827, 942], scale_delta_V = [50, 500/7, 250/3, 100, 2500/19, 3748/25]):
     # Define oscillation frequencies and theta values
     if theta is None:
         theta = np.linspace(0.1, np.pi, 200)  # rad
@@ -136,7 +136,7 @@ def plot_all_deltas(theta=None, f_osc=None, scale_delta_t = [314, 449, 524, 628,
     voltage_resolution =[]
     for i in range(len(labels)):
         delta_V = 1 / (scale_delta_V[i] * theta)/2/alpha  # V
-        voltage_resolution.append(1 / (scale_delta_V[i] * (np.pi-np.arctan(8))*2*alpha) ) #compute delta_V for worst case
+        voltage_resolution.append(1 / (scale_delta_V[i] * (2*np.pi-np.arctan(8))*2*alpha) ) #compute delta_V for worst case
         plt.semilogy(theta, delta_V * 1e6, linestyle='-', label=labels[i])  # µV
     plt.xlabel(r'$\theta$ [rad]')
     plt.ylabel(r'$\Delta V$ [$\mu V$]')
