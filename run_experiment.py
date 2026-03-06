@@ -18,17 +18,17 @@ from gate_library import get_gate_angles, get_gate_defaults
 
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
-FORCE_EVALUATION = False
+FORCE_EVALUATION = True
 RUN = {
-    "fidelities": True,
+    "fidelities": False,
     "heatmaps": True,
-    "heatmaps_all": True,
-    "jitter": True,
-    "white_noise": True,     # run white-only
-    "pink_noise": True,      # run pink-only
-    "noise": True,           # combined plots
+    "heatmaps_all": False,
+    "jitter": False,
+    "white_noise": False,     # run white-only
+    "pink_noise": False,      # run pink-only
+    "noise": False,           # combined plots
 }
-PLOT_ONLY = True
+PLOT_ONLY = False
 
 """
 Batch controls
@@ -41,7 +41,7 @@ alpha = 25
 
 # Sweep sets
 GATES = ["SXH"]            # e.g., ["X", "Y", "SXH"]
-J_VALUES = [10e6, 20e6]                 # e.g., [10e6, 20e6]
+J_VALUES = [10e6,20e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
 t_rise = 1e-9
@@ -51,15 +51,20 @@ tau = 0.1e-9
 DT_PS = 15  # desired time resolution in picoseconds
 
 # Noise sweeps
-alpha_list = [12.5]
+alpha_list = [12.5,25]  # e.g., [12.5, 25.0]
 Joffset_list = [100e3, 10e3]
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
 # Iterations (outer for averaging QPT of averaged S)
 iterations = 5
 
 #heatmap sweeps
-delta_t_range = 200e-12
-delta_V_range = 0.2e-3
+# delta_t_range = 200e-12
+# delta_V_range = 0.2e-3
+
+#zoom heatmaps around the ideal point for better resolution of thresholds
+delta_t_range = 80e-12
+delta_V_range = 0.05e-3
+
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
@@ -130,10 +135,10 @@ def main():
     if FORCE_EVALUATION:
         # Create a fresh versioned directory and force all runs (no plot-only)
         base_dir = _next_versioned_results_dir(BASE_DIR)
-        for k in RUN.keys():
-            RUN[k] = True
-        global PLOT_ONLY
-        PLOT_ONLY = False
+        # for k in RUN.keys():
+        #     RUN[k] = True
+        # global PLOT_ONLY
+        # PLOT_ONLY = False
     _print_run_summary(base_dir)
     status("[STATUS] Runner initialized")
 
