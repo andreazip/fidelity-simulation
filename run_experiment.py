@@ -18,16 +18,21 @@ from gate_library import get_gate_angles, get_gate_defaults
 
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
-FORCE_EVALUATION = True
+FORCE_EVALUATION = False
+RUN_ALL = True  # shortcut to set all RUN flags to True; overrides individual settings below
 RUN = {
-    "fidelities": False,
-    "heatmaps": True,
+    "fidelities": True,
+    "heatmaps": False,
     "heatmaps_all": False,
     "jitter": False,
     "white_noise": False,     # run white-only
     "pink_noise": False,      # run pink-only
     "noise": False,           # combined plots
 }
+if RUN_ALL:
+    for k in RUN:
+        RUN[k] = True
+
 PLOT_ONLY = False
 
 """
@@ -40,30 +45,32 @@ J_offset = 10e3
 alpha = 25
 
 # Sweep sets
-GATES = ["SXH"]            # e.g., ["X", "Y", "SXH"]
-J_VALUES = [10e6,20e6]                 # e.g., [10e6, 20e6]
+GATES = ["X"]            # e.g., ["X", "Y", "SXH"]
+J_VALUES = [200e6,100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
 t_rise = 1e-9
 t_fall = 1e-9
 tau = 0.1e-9
 
-DT_PS = 15  # desired time resolution in picoseconds
+#set infidelity resolution needed:
+inf_res = 1e-6
 
 # Noise sweeps
 alpha_list = [12.5,25]  # e.g., [12.5, 25.0]
-Joffset_list = [100e3, 10e3]
+Joffset_list = [100e3, 10e3, 1e3]
+
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
 # Iterations (outer for averaging QPT of averaged S)
-iterations = 5
+iterations = 100
 
 #heatmap sweeps
-# delta_t_range = 200e-12
-# delta_V_range = 0.2e-3
+delta_t_range = 200e-12
+delta_V_range = 0.4e-3
 
 #zoom heatmaps around the ideal point for better resolution of thresholds
-delta_t_range = 80e-12
-delta_V_range = 0.05e-3
+# delta_t_range = 80e-12
+# delta_V_range = 0.05e-3
 
 N_space = 25
 
@@ -102,7 +109,7 @@ def _print_run_summary(base_dir: Path):
     print(f"alpha                    : {alpha}")
     print(f"t_rise, t_fall (ns)      : {t_rise*1e9:.3f}, {t_fall*1e9:.3f}")
     print(f"tau (ns)                 : {tau*1e9:.3f}")
-    print(f"DT_PS (ps)               : {DT_PS}")
+    print(f"infidelity resolution    : {inf_res}")
     print(f"delta_t_range (ps)       : {delta_t_range*1e12:.3f}")
     print(f"delta_V_range (mV)       : {delta_V_range*1e3:.3f}")
     print(f"alpha_list               : {alpha_list}")
@@ -154,7 +161,9 @@ def main():
 
         for J in J_VALUES:
             # Simulation grid per (gate, J)
-            T = 20e6/J*defaults.T if defaults.T is not None else 80e-9
+            T = 20e6/J*defaults.T + 2e-9 +6*max(t_rise,t_fall, 7*tau) if defaults.T is not None else 80e-9
+            DT_PS = np.sqrt(inf_res/7)/np.pi/J *1e12  # scale with J to maintain resolution in time domain; factor for finer resolution
+            
             N = int(np.ceil(T / (DT_PS * 1e-12)))
             if N % 2 == 1:
                 N += 1
@@ -189,7 +198,7 @@ def main():
                     p = np.linspace(0, deltaV*4*scale, N_noise)
                 return w, p
 
-            sigma_jitters= np.linspace(0, deltat*1.5, N_noise)
+            sigma_jitters= np.linspace(0, deltat*3, N_noise)
 
             cfg = ExperimentConfig(
                 J=J,
@@ -483,7 +492,7 @@ def main():
                 status(f"[STATE{state_counter}] Starting test_gates heatmaps... J={J/1e6:.0f}MHz")
                 # Enlarge gate time for comprehensive heatmaps, recompute N to maintain ~DT_PS resolution
                 # Use a factor to scale T while keeping resolution tied to DT_PS
-                T_all  = 20e6/J * get_gate_defaults("SXH").T
+                T_all  = 20e6/J * get_gate_defaults("SXH").T + 2e-9 + 6*max(t_rise,t_fall, 7*tau)
                 N_all = int(np.ceil(T_all / (DT_PS * 1e-12)))
                 if N_all % 2 == 1:
                     N_all += 1

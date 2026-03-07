@@ -1,5 +1,7 @@
 import numpy as np
 import qutip as qt
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from functools import partial
 import matplotlib.pyplot as plt
@@ -7,6 +9,10 @@ from matplotlib.colors import LogNorm
 from pathlib import Path
 import re
 from gate_library import get_gate_angles, GATE_LIBRARY
+
+
+def _maybe_show():
+    plt.close()
 
 
 def title_to_filename(title, ext="png"):
@@ -255,7 +261,7 @@ def plot_infidelity_vs_noise(
             plt.grid(True, which="both")
             plt.tight_layout()
             save_figure(f"white_noise_{titles[metric]}", save_dir)
-            plt.show()
+            _maybe_show()
 
         inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
 
@@ -301,7 +307,7 @@ def plot_infidelity_vs_noise(
             plt.grid(True, which="both")
             plt.tight_layout()
             save_figure(f"pink_noise_{titles[metric]}", save_dir)
-            plt.show()
+            _maybe_show()
 
         # ================= THRESHOLD RMS (RC ONLY) =================
         # Compute thresholds independently for white and pink when QPT metric is available
@@ -351,7 +357,7 @@ def plot_infidelity_vs_noise(
             plt.grid(True, which="both")
             plt.tight_layout()
             save_figure(f"PSD_threshold_white_{titles[metric]}", save_dir)
-            plt.show()
+            _maybe_show()
 
         if thresholds_pink_ok:
             Sp_array = np.zeros((100, N//2+1))
@@ -375,7 +381,7 @@ def plot_infidelity_vs_noise(
             plt.grid(True, which="both")
             plt.tight_layout()
             save_figure(f"PSD_threshold_pink_{titles[metric]}", save_dir)
-            plt.show()
+            _maybe_show()
 
 
         if thresholds_white_ok and thresholds_pink_ok:
@@ -392,7 +398,7 @@ def plot_infidelity_vs_noise(
             plt.grid(True, which="both")
             plt.tight_layout()
             save_figure(f"PSD_threshold_combined_{titles[metric]}", save_dir)
-            plt.show()
+            _maybe_show()
 
             # Plot combined histogram / distribution when both are available
             plt.figure(figsize=(16,9))
@@ -416,7 +422,7 @@ def plot_infidelity_vs_noise(
             plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
             plt.legend()
             save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
-            plt.show()
+            _maybe_show()
 
         if thresholds_pink_ok:
             # Plot histogram / distribution (pink only)
@@ -437,7 +443,7 @@ def plot_infidelity_vs_noise(
             plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
             plt.legend()
             save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
-            plt.show()
+            _maybe_show()
 
         if thresholds_white_ok:
             # Plot histogram / distribution (white only)
@@ -458,7 +464,7 @@ def plot_infidelity_vs_noise(
             plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
             plt.legend()
             save_figure(rf"Noise distributions White noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
-            plt.show()
+            _maybe_show()
 
         # ================= WRITE OUTPUT FILE(S) =================
         if thresholds_white_ok:
@@ -492,7 +498,7 @@ def plot_infidelity_vs_noise(
 
 
 
-def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-7):
+def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DIR=SAVE_DIR, floor_value=1e-6):
     """
     Load RMS timing jitter simulation results and plot infidelity vs jitter for:
     - evolution fidelity
@@ -574,7 +580,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
         plt.grid(True, which="both", ls="--")
         plt.tight_layout()
         save_figure(title, save_dir)
-        plt.show()
+        _maybe_show()
 
     threshold = 1e-4
     metric = "_qpt"  # evolution fidelity
@@ -604,7 +610,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
     plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
     plt.legend()
     save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12:.2f}$ ps", save_dir)
-    plt.show()
+    _maybe_show()
 
 
 def plot_infidelity_heatmaps(
@@ -691,7 +697,7 @@ def plot_infidelity_heatmaps(
     if save_dir is not None:
         save_figure(save_prefix, save_dir)
 
-    plt.show()
+    _maybe_show()
 
     # --- Individual plots with contour ---
     if plot_individual:
@@ -759,7 +765,7 @@ def plot_infidelity_heatmaps(
             if save_dir is not None:
                 save_figure(f"{pulse_type.capitalize()} pulse", save_dir)
 
-            plt.show()
+            _maybe_show()
 
 
 # ---- Gate thresholds from saved 1D heatmaps ----
