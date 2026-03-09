@@ -36,8 +36,8 @@ class ExperimentConfig:
     deltat: float = 0.0
 
     # Noise
-    white_amp: float = 0.0
-    pink_amp: float = 0.0
+    N0_white: float = 0.0
+    K_flicker: float = 0.0
     sigma_jitter: float = 0.0
 
 @dataclass
@@ -114,8 +114,8 @@ def run_clean_fidelities(cfg, dirs, plot_pulse=False):
                 t_rise=cfg.t_rise,
                 t_fall=cfg.t_fall,
                 tau=cfg.tau,
-                white_amp=cfg.white_amp,
-                pink_amp=cfg.pink_amp,
+                N0_white=cfg.N0_white,
+                K_flicker=cfg.K_flicker,
                 sigma_jitter=cfg.sigma_jitter,
                 plot_pulse=plot_pulse,
                 plot_bloch=False,
@@ -225,8 +225,8 @@ def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list, n_jobs=None, status_cb=N
             t_rise=cfg.t_rise,
             t_fall=cfg.t_fall,
             tau=cfg.tau,
-            white_amp=0,
-            pink_amp=0,
+            N0_white=0,
+            K_flicker=0,
             sigma_jitter=0,
             plot_pulse=False,
             plot_bloch=False,
@@ -315,8 +315,8 @@ def run_heatmaps(cfg, dirs, delta_t_list, delta_V_list, n_jobs=None, status_cb=N
                         t_rise=cfg.t_rise,
                         t_fall=cfg.t_fall,
                         tau=cfg.tau,
-                        white_amp=0,
-                        pink_amp=0,
+                        N0_white=0,
+                        K_flicker=0,
                         sigma_jitter=0,
                         plot_pulse=False,
                         plot_bloch=False,
@@ -470,8 +470,8 @@ def run_test_gates_heatmaps(
                 t_rise=cfg.t_rise,
                 t_fall=cfg.t_fall,
                 tau=cfg.tau,
-                white_amp=0,
-                pink_amp=0,
+                N0_white=0,
+                K_flicker=0,
                 sigma_jitter=0,
                 plot_pulse=False,
                 plot_bloch=False,
@@ -553,8 +553,8 @@ def run_test_gates_heatmaps(
                                 t_rise=cfg.t_rise,
                                 t_fall=cfg.t_fall,
                                 tau=cfg.tau,
-                                white_amp=0,
-                                pink_amp=0,
+                                N0_white=0,
+                                K_flicker=0,
                                 sigma_jitter=0,
                                 plot_pulse=False,
                                 plot_bloch=False,
@@ -630,8 +630,8 @@ def run_test_gates_heatmaps(
                                 t_rise=cfg.t_rise,
                                 t_fall=cfg.t_fall,
                                 tau=cfg.tau,
-                                white_amp=0,
-                                pink_amp=0,
+                                N0_white=0,
+                                K_flicker=0,
                                 sigma_jitter=0,
                                 plot_pulse=False,
                                 plot_bloch=False,
@@ -691,7 +691,7 @@ def run_jitter(cfg, dirs, sigma_jitters, iterations=50, n_jobs=None):
     return file
 
 # ---- White/Pink noise ----
-def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50, n_jobs=None):
+def run_noise(cfg, dirs, N0_whites, K_flickers, iterations=50, n_jobs=None):
     file = dirs["data"] / "noise.npz"
     if file.exists():
         return file
@@ -710,8 +710,8 @@ def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50, n_jobs=None):
         tau=cfg.tau,
         T=cfg.T,
         N=cfg.N,
-        white_amps=white_amps,
-        pink_amps=pink_amps,
+        N0_whites=N0_whites,
+        K_flickers=K_flickers,
         iterations=iterations,
         output_file=file,
         compute_state=False,
@@ -721,7 +721,7 @@ def run_noise(cfg, dirs, white_amps, pink_amps, iterations=50, n_jobs=None):
     )
     return file
 
-def run_white_noise_only(cfg, dirs, white_amps, iterations=50, n_jobs=None):
+def run_white_noise_only(cfg, dirs, N0_whites, iterations=50, n_jobs=None):
     file = dirs["data"] / "white_noise.npz"
     if file.exists():
         return file
@@ -741,8 +741,8 @@ def run_white_noise_only(cfg, dirs, white_amps, iterations=50, n_jobs=None):
         tau=cfg.tau,
         T=cfg.T,
         N=cfg.N,
-        white_amps=white_amps,
-        pink_amps=np.array([]),
+        N0_whites=N0_whites,
+        K_flickers=np.array([]),
         iterations=iterations,
         output_file=file,
         compute_state=False,
@@ -752,7 +752,7 @@ def run_white_noise_only(cfg, dirs, white_amps, iterations=50, n_jobs=None):
     )
     return file
 
-def run_pink_noise_only(cfg, dirs, pink_amps, iterations=50, n_jobs=None):
+def run_pink_noise_only(cfg, dirs, K_flickers, iterations=50, n_jobs=None):
     file = dirs["data"] / "pink_noise.npz"
     if file.exists():
         return file
@@ -771,8 +771,8 @@ def run_pink_noise_only(cfg, dirs, pink_amps, iterations=50, n_jobs=None):
         tau=cfg.tau,
         T=cfg.T,
         N=cfg.N,
-        white_amps=np.array([]),
-        pink_amps=pink_amps,
+        N0_whites=np.array([]),
+        K_flickers=K_flickers,
         iterations=iterations,
         output_file=file,
         compute_state=False,
@@ -813,8 +813,8 @@ def merge_noise_results(dirs):
 
     save_dict = {
         "pulse_types": pulse_types,
-        "white_amps": dw["white_amps"],
-        "pink_amps": dp["pink_amps"],
+        "N0_whites": dw["N0_whites"],
+        "K_flickers": dp["K_flickers"],
     }
 
     # Merge available metric families; only include ones present in both
@@ -876,29 +876,29 @@ def _extract_noise_thresholds_from_npz(
 
     w_key = f"infidelity_white{metric}"
     w_std_key = f"infidelity_white_std{metric}"
-    if (w_key in keys) and (w_std_key in keys) and ("white_amps" in keys):
-        white_amps = np.array(data["white_amps"], dtype=float)
+    if (w_key in keys) and (w_std_key in keys) and ("N0_whites" in keys):
+        n0_arr = np.array(data["N0_whites"], dtype=float)
         inf_white = np.array(data[w_key].item().get(pulse, []), dtype=float)
         std_white = np.array(data[w_std_key].item().get(pulse, []), dtype=float)
-        if (white_amps.size > 0) and (inf_white.size == white_amps.size) and (std_white.size == white_amps.size):
+        if (n0_arr.size > 0) and (inf_white.size == n0_arr.size) and (std_white.size == n0_arr.size):
             idx_w = _first_threshold_index(inf_white, std_white, threshold=threshold)
-            rms_w = float(white_amps[idx_w])
-            out["white_rms"] = rms_w
+            n0_val = float(n0_arr[idx_w])
+            out["N0"] = n0_val
             if fs_hz and fs_hz > 0:
-                out["N0"] = rms_w ** 2 / (fs_hz / 2.0)
+                out["white_rms"] = np.sqrt(max(n0_val, 0.0) * fs_hz / 2.0)
 
     p_key = f"infidelity_pink{metric}"
     p_std_key = f"infidelity_pink_std{metric}"
-    if (p_key in keys) and (p_std_key in keys) and ("pink_amps" in keys):
-        pink_amps = np.array(data["pink_amps"], dtype=float)
+    if (p_key in keys) and (p_std_key in keys) and ("K_flickers" in keys):
+        k_arr = np.array(data["K_flickers"], dtype=float)
         inf_pink = np.array(data[p_key].item().get(pulse, []), dtype=float)
         std_pink = np.array(data[p_std_key].item().get(pulse, []), dtype=float)
-        if (pink_amps.size > 0) and (inf_pink.size == pink_amps.size) and (std_pink.size == pink_amps.size):
+        if (k_arr.size > 0) and (inf_pink.size == k_arr.size) and (std_pink.size == k_arr.size):
             idx_p = _first_threshold_index(inf_pink, std_pink, threshold=threshold)
-            rms_p = float(pink_amps[idx_p])
-            out["pink_rms"] = rms_p
+            k_val = float(k_arr[idx_p])
+            out["S_1Hz"] = k_val
             if (fmax_hz is not None) and (fmin_hz is not None) and (fmax_hz > fmin_hz > 0):
-                out["S_1Hz"] = rms_p ** 2 / np.log(fmax_hz / fmin_hz)
+                out["pink_rms"] = np.sqrt(max(k_val, 0.0) * np.log(fmax_hz / fmin_hz))
 
     return out
 

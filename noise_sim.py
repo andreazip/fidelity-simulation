@@ -47,7 +47,7 @@ def noise_psd(T, N, N0, A):
         #take only the frequencies different than 0 to avoid problems with 1/f
         freqs = freqs[1:]
         print("Generated frequencies:", freqs[0], "Hz")
-
+        print(freqs[0], "Hz")
         psd_shape = np.zeros_like(freqs)
         psd_shape = N0*white_psd(freqs) + A *pink_psd(freqs)
         
@@ -67,12 +67,12 @@ def noise_psd(T, N, N0, A):
 
 def test_resolution_independence():
     # Parameters
-    T_total = 100e-6  # 100 ns simulation window
-    N0_target = 10e-15 # Target White Noise Density (Unit^2/Hz)
+    T_total = 50e-9  # 100 ns simulation window
+    N0_target = 10e-18 # Target White Noise Density (Unit^2/Hz)
     A_target = 1e-7  # Target Flicker Coefficient
     
     # Two different resolutions
-    dt_vals = [1.5e-9, 0.75e-9] # 1.5 ps and 600 fs
+    dt_vals = [1.5e-12, 0.75e-12] # 1.5 ps and 600 fs
     labels = ['1.5 ps Res', '600 fs Res']
     colors = ['blue', 'red']
     
@@ -91,7 +91,9 @@ def test_resolution_independence():
         
         # Estimate PSD using Welch
         fs = N / T_total
-        f_axis, psd_estimate = welch(noise_samples, fs, nperseg=1024)
+        f_axis, psd_estimate = welch(noise_samples, fs, nperseg=N//8, window='hann', scaling='density')
+
+        print(f_axis[1], "Hz")
         
         # Plotting
         plt.loglog(f_axis, psd_estimate, label=label, color=col, alpha=0.7)

@@ -38,17 +38,17 @@ N = 4000
 delta_t_list = np.linspace(-120e-12, 120e-12, 50)
 delta_V_list = np.linspace(-0.2e-3, 0.2e-3, 50)
 
-#first without noise
-white_amp = 0
+# first without noise
+N0_white = 0.0
+K_flicker = 0.0
 sigma_jitter = 0
-pink_amp = 0
 
 
 deltat = 1 / (J * 770) #formula to get resolution for 3 pulses
 deltaV = 1 / ((6250/51)*(np.pi-np.arctan(8))*2*alpha) #formula to get resolution in voltage for 4 pulses
 
 # Choose directory depending on noise
-if white_amp == sigma_jitter == pink_amp == 0:
+if N0_white == sigma_jitter == K_flicker == 0:
        SAVE_DIR = Path(
             f"C:/Users/zipar/OneDrive - Delft University of Technology/Second Year/MEP/Images_results/Results_{np.round(J/1e6,0)}MHz"
         )
@@ -94,8 +94,8 @@ with open(output_file, "w") as f:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=True,
-                     white_amp = 0,
-                     pink_amp = 0,
+                     N0_white = 0,
+                     K_flicker = 0,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
               )
@@ -121,15 +121,15 @@ with open(output_file, "w") as f:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=True,
-                     white_amp = 0,
-                     pink_amp = 0,
+                     N0_white = 0,
+                     K_flicker = 0,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
               )
               f.write(f"State fidelity {pulse_type}: {state_fidelity*100:.5f} % , operator fidelity: {operator_fidelity*100:.5f} %\n")
 
-       white_amp = 1e-3
-       f.write(f"\n Voltage resolution 0 uV, Time resolution 0 ps, white noise {white_amp*1e3} mV \n \n")  # header
+       N0_white = 3e-17
+       f.write(f"\n Voltage resolution 0 uV, Time resolution 0 ps, white noise N0={N0_white:.3e} V^2/Hz \n \n")  # header
 
        for pulse_type in pulse_types:
               state_fidelity, operator_fidelity, f_QPT, _, _ = EO.run_exchange_qubit_simulation(
@@ -149,16 +149,16 @@ with open(output_file, "w") as f:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=True,
-                     white_amp = white_amp,
-                     pink_amp = 0,
+                     N0_white = N0_white,
+                     K_flicker = 0,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
               )
               f.write(f"State fidelity {pulse_type}: {state_fidelity*100:.5f} % , operator fidelity: {operator_fidelity*100:.5f} %\n")
 
-       pink_amp = 1e-3
-       white_amp = 0
-       f.write(f"\n Voltage resolution 0 uV, Time resolution 0 ps, pink noise {pink_amp*1e3} mV \n \n")  # header
+       K_flicker = 5e-9
+       N0_white = 0
+       f.write(f"\n Voltage resolution 0 uV, Time resolution 0 ps, flicker noise K={K_flicker:.3e} V^2 \n \n")  # header
 
        for pulse_type in pulse_types:
               state_fidelity, operator_fidelity, f_QPT, _, _ = EO.run_exchange_qubit_simulation(
@@ -178,15 +178,15 @@ with open(output_file, "w") as f:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=True,
-                     white_amp = 0,
-                     pink_amp = pink_amp,
+                     N0_white = 0,
+                     K_flicker = K_flicker,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
               )
               f.write(f"State fidelity {pulse_type}: {state_fidelity*100:.5f} % , operator fidelity: {operator_fidelity*100:.5f} %\n")
 
-       pink_amp = 0
-       white_amp = 0
+       K_flicker = 0
+       N0_white = 0
        sigma_jitter = 100e-12
        f.write(f"\n Voltage resolution 0 uV, Time resolution 0 ps, jitter {sigma_jitter*1e12} ps \n \n")  # header
 
@@ -208,8 +208,8 @@ with open(output_file, "w") as f:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=True,
-                     white_amp = 0,
-                     pink_amp = 0,
+                     N0_white = 0,
+                     K_flicker = 0,
                      sigma_jitter=sigma_jitter,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
@@ -248,8 +248,8 @@ for pulse_type in pulse_types:
                      tau = tau, 
                      plot_bloch=False,
                      plot_pulse=False,
-                     white_amp = 0,
-                     pink_amp = 0,
+                     N0_white = 0,
+                     K_flicker = 0,
                      sigma_jitter= 0,
                      T = T,
                      N = N #keep time resolution T/N to less than 50ps
@@ -282,11 +282,11 @@ Joffset_list = [100e3, 10e3]
 
 for alpha in alpha_list:
     if alpha == 25:
-           pink_amps=np.linspace(0, 0.001, 2)
-           white_amps = np.linspace(0, 0.003, 2)
+           K_flickers = np.linspace(0, 5e-9, 2)
+           N0_whites = np.linspace(0, 3e-17, 2)
     else:
-           pink_amps=np.linspace(0, 0.0008, 2)
-           white_amps = np.linspace(0, 0.002, 2)
+           K_flickers = np.linspace(0, 4e-9, 2)
+           N0_whites = np.linspace(0, 2e-17, 2)
 
     for Joffset in Joffset_list:
        #Setting V to keep always the desired J
@@ -303,6 +303,6 @@ for alpha in alpha_list:
         save_dir = Path(SAVE_DIR) / "Noise/White and Flicker noise"
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        EO.simulate_infidelity_vs_noise(V=V, alpha=alpha, J_offset = Joffset, theta1=theta1, theta2=theta2, theta3=theta3, theta4=theta4, t_rise = t_rise, t_fall=t_fall, tau=tau, T =T, N=N,  pink_amps = pink_amps, white_amps=white_amps, iterations= 2, output_file=file_path)
+        EO.simulate_infidelity_vs_noise(V=V, alpha=alpha, J_offset = Joffset, theta1=theta1, theta2=theta2, theta3=theta3, theta4=theta4, t_rise = t_rise, t_fall=t_fall, tau=tau, T =T, N=N, K_flickers=K_flickers, N0_whites=N0_whites, iterations= 2, output_file=file_path)
         plot.plot_infidelity_vs_noise(alpha, Joffset, file_path,SAVE_DIR= save_dir, floor_value=1e-7)
 

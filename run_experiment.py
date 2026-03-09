@@ -46,7 +46,7 @@ alpha = 25
 
 # Sweep sets
 GATES = ["SXH", "Y", "X"]            # e.g., ["X", "Y", "SXH"]
-J_VALUES = [200e6,100e6]                 # e.g., [10e6, 20e6]
+J_VALUES = [200e6, 100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
 t_rise = 0.5e-9
@@ -54,14 +54,15 @@ t_fall = 0.5e-9
 tau = 0.05e-9
 
 #set infidelity resolution needed:
-DT_PS = 1.5  # target time resolution in ps to capture infidelity features; adjust as needed
+target_infidelity= 10**(-5.5)  # target time resolution in ps to capture infidelity features; adjust as needed
+DT_ps = np.sqrt(target_infidelity/7/np.sqrt(2))/np.pi*1e12 #time in ps, multiplied by J
 
 # Noise sweeps
-alpha_list = [12.5,25]  # e.g., [12.5, 25.0]
-Joffset_list = [100e3, 10e3, 1e3]
+alpha_list = [25,12.5]  # e.g., [12.5, 25.0]
+Joffset_list = [1e3, 10e3, 100e3]
 
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
-# Iterations (outer for averaging QPT of averaged S)
+# Iterations 
 iterations = 100
 
 #heatmap sweeps
@@ -75,7 +76,7 @@ delta_V_range = 0.4e-3
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 8  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 5  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
@@ -109,7 +110,7 @@ def _print_run_summary(base_dir: Path):
     print(f"alpha                    : {alpha}")
     print(f"t_rise, t_fall (ns)      : {t_rise*1e9:.3f}, {t_fall*1e9:.3f}")
     print(f"tau (ns)                 : {tau*1e9:.3f}")
-    print(f"Time resolution (ps)     : {DT_PS} ps")
+    print(f"Time resolution (ps)     : {[f'{DT_ps/j:.2f} ps * J, J = {j/1e6:.0f} MHz' for j in J_VALUES]}")
     print(f"delta_t_range (ps)       : {delta_t_range*1e12:.3f}")
     print(f"delta_V_range (mV)       : {delta_V_range*1e3:.3f}")
     print(f"alpha_list               : {alpha_list}")
@@ -162,7 +163,8 @@ def main():
         for J in J_VALUES:
             # Simulation grid per (gate, J)
             T = 20e6/J*defaults.T + 2e-9 +6*max(t_rise,t_fall, 7*tau) if defaults.T is not None else 80e-9
-           
+            DT_PS = DT_ps/J
+
             N = int(np.ceil(T / (DT_PS * 1e-12)))
             if N % 2 == 1:
                 N += 1
@@ -181,21 +183,35 @@ def main():
                 "Single": np.linspace(-delta_V_range/2, delta_V_range/2, N_space),
             }
 
-            # Noise amplitudes scale with deltaV; compute per-alpha robustly
-            def _amp_arrays_for_alpha(alpha_val: float | int):
-                aval = round(float(alpha_val), 1)
-                if aval == 25.0:
-                    w = np.linspace(0, deltaV*30, N_noise)
-                    p = np.linspace(0, deltaV*4, N_noise)
-                elif aval == 12.5:
-                    w = np.linspace(0, deltaV*60, N_noise)
-                    p = np.linspace(0, deltaV*8, N_noise )
-                else:
-                    # Fallback: scale proportionally to 25 reference
-                    scale = 25.0 / max(aval, 1e-9)
-                    w = np.linspace(0, deltaV*30*scale, N_noise)
-                    p = np.linspace(0, deltaV*4*scale, N_noise)
-                return w, p
+            # Physical noise sweeps from analytical infidelity threshold (1e-4).
+            def _noise_arrays_for_alpha(alpha_val: float | int):
+                alpha_v = float(alpha_val)
+                target_infidelity = 1e-4
+
+                theta = np.zeros(3)
+                theta[0] = theta1 if theta1 != 0 else theta2
+                theta[1] = theta2 if theta1 != 0 else theta3
+                theta[2] = theta3 if theta1 != 0 else theta4
+
+                theta_min = np.min(theta)
+                theta_avg = np.mean(theta)
+
+                fs_local = N / T
+                f_cutoff = J * 2 * np.pi / theta_min
+                log_term = np.log(f_cutoff / (fs_local / N))
+
+                coeff = (4 + 3 * np.cos(theta[1] / 2) ** 2) * (alpha_v * theta_avg) ** 2 * np.sqrt(2)
+
+                n0_thr = target_infidelity / (coeff * f_cutoff)
+                k_thr = target_infidelity / (coeff * log_term)
+
+                # Sweep from threshold to 2x threshold (e.g. 5e-7 -> 10e-7 style).
+                n0_arr = np.linspace(0, 2.0 * n0_thr, N_noise)
+                n0_arr = n0_arr[1:]
+                k_arr = np.linspace(0, 4.0 * k_thr, N_noise)
+                k_arr = k_arr[1:]
+                
+                return n0_arr, k_arr
 
             sigma_jitters= np.linspace(0, deltat*3, N_noise)
 
@@ -365,8 +381,8 @@ def main():
                                 status(f"[STATE {state_counter}] Stop before white-noise for {GATE}, J={J/1e6:.0f}MHz")
                                 return
                             status(f"[STATE {state_counter}] Starting white-noise for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
-                            w_amps, _ = _amp_arrays_for_alpha(alpha_val)
-                            n_file_w = run_white_noise_only(cfg_loop, dirs_loop, w_amps, iterations=iterations, n_jobs=N_JOBS)
+                            n0_vals, _ = _noise_arrays_for_alpha(alpha_val)
+                            n_file_w = run_white_noise_only(cfg_loop, dirs_loop, n0_vals, iterations=iterations, n_jobs=N_JOBS)
                         else:
                             n_file_w = dirs_loop["data"] / f"white_noise.npz"
 
@@ -402,8 +418,8 @@ def main():
                                 status(f"[STATE {state_counter}] Stop before pink-noise for {GATE}, J={J/1e6:.0f}MHz")
                                 return
                             status(f"[STATE {state_counter}] Starting pink-noise for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
-                            _, p_amps = _amp_arrays_for_alpha(alpha_val)
-                            n_file_p = run_pink_noise_only(cfg_loop, dirs_loop, p_amps, iterations=iterations, n_jobs=N_JOBS)
+                            _, k_vals = _noise_arrays_for_alpha(alpha_val)
+                            n_file_p = run_pink_noise_only(cfg_loop, dirs_loop, k_vals, iterations=iterations, n_jobs=N_JOBS)
                         else:
                             n_file_p = dirs_loop["data"] / f"pink_noise.npz"
 
@@ -452,18 +468,18 @@ def main():
                                     return
                                 # Avoid duplicating sweeps: if white or pink were already selected/run,
                                 # generate only the missing side, then merge.
-                                w_amps, p_amps = _amp_arrays_for_alpha(alpha_val)
+                                n0_vals, k_vals = _noise_arrays_for_alpha(alpha_val)
                                 if RUN.get("white_noise") and white_path.exists() and not pink_path.exists():
                                     status(f"[STATE {state_counter}] Combined: generating pink-only to merge with existing white for {GATE}, J={J/1e6:.0f}MHz")
-                                    n_file_p = run_pink_noise_only(cfg_loop, dirs_loop, p_amps, iterations=iterations, n_jobs=N_JOBS)
+                                    n_file_p = run_pink_noise_only(cfg_loop, dirs_loop, k_vals, iterations=iterations, n_jobs=N_JOBS)
                                     n_file = merge_noise_results(dirs_loop) or n_file_p
                                 elif RUN.get("pink_noise") and pink_path.exists() and not white_path.exists():
                                     status(f"[STATE {state_counter}] Combined: generating white-only to merge with existing pink for {GATE}, J={J/1e6:.0f}MHz")
-                                    n_file_w = run_white_noise_only(cfg_loop, dirs_loop, w_amps, iterations=iterations, n_jobs=N_JOBS)
+                                    n_file_w = run_white_noise_only(cfg_loop, dirs_loop, n0_vals, iterations=iterations, n_jobs=N_JOBS)
                                     n_file = merge_noise_results(dirs_loop) or n_file_w
                                 else:
                                     status(f"[STATE {state_counter}] Running combined noise (both sweeps) for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
-                                    n_file = run_noise(cfg_loop, dirs_loop, w_amps, p_amps, iterations=iterations, n_jobs=N_JOBS)
+                                    n_file = run_noise(cfg_loop, dirs_loop, n0_vals, k_vals, iterations=iterations, n_jobs=N_JOBS)
                             else:
                                 missing = []
                                 if not white_path.exists():

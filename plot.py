@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm  
+from scipy.signal import welch
 from pathlib import Path
 import re
 from gate_library import get_gate_angles, GATE_LIBRARY
@@ -48,31 +49,17 @@ SAVE_DIR = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Yea
 
 floor_value = 1e-6
 
-# Noise generator with arbitrary PSD
-def noise_psd(T, N, psd_func=lambda f: 1):
-        fs = N/T
-
-        #generate frequency from 0 to fs*N/2 if N is even
-        freqs = np.fft.rfftfreq(N,1/fs) 
-        #take only the frequencies different than 0 to avoid problems with 1/f
-        freqs = freqs[1:]
-        
-        #N is always even, then the length will be N/2 +1
-        #N-1 always odd (N+1/2)
-        X_white = np.fft.rfft(np.random.randn(N))
-
-        S = np.sqrt(psd_func(freqs))
-        S = S/np.sqrt(np.mean(S**2))
-
-        #remove the first element of X that is the DC component
-        X_shaped = X_white[1:] * S
-
-        # Back to time domain
-        x = np.fft.irfft(X_shaped, n=N)
-        # Normalize to unit RMS ---
-        x_rms = x/np.std(x)
-
-        return x_rms, S**2
+# Noise generator using one-sided PSD = N0 + K/f
+def noise_psd(T, N, N0=0.0, K=0.0):
+    fs = N / T
+    freqs = np.fft.rfftfreq(N, 1 / fs)[1:]
+    psd_shape = N0 * white_psd(freqs) + K * pink_psd(freqs)
+    psd_shape = np.maximum(psd_shape, 0.0)
+    X_white = np.fft.rfft(np.random.randn(N))
+    S = np.sqrt(psd_shape * fs / 2.0)
+    X_shaped = X_white[1:] * S
+    x = np.fft.irfft(X_shaped, n=N)
+    return x, psd_shape
 
 # PSD functions
 def white_psd(f):
@@ -83,18 +70,54 @@ def pink_psd(f):
     S = 1/f
     return S
 
-PPT_STYLE = {
-    "font.size": 20,
-    "axes.titlesize": 24,
-    "axes.labelsize": 18,
-    "xtick.labelsize": 20,
-    "ytick.labelsize": 20,
-    "legend.fontsize": 15,
-    "figure.figsize": (16, 9),  # 16:9 in inches
-    "lines.linewidth": 2.5
-}
+# ===== PUBLICATION-READY PLOT STYLE =====
+matplotlib.rcParams['font.family'] = 'sans-serif'
+matplotlib.rcParams['font.sans-serif'] = ['Arial', 'Helvetica', 'DejaVu Sans']
 
-plt.rcParams.update(PPT_STYLE)
+plt.rcParams.update({
+    # Font sizes
+    "font.size": 11,
+    "axes.titlesize": 14,
+    "axes.labelsize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "figure.figsize": (10, 6),
+
+    # Line and marker styles
+    "lines.linewidth": 2.6,
+    "lines.markersize": 4,
+    "lines.markeredgewidth": 1.0,
+
+    # Grid
+    "grid.alpha": 0.6,
+    "grid.color": "#b7b7b7",
+    "grid.linestyle": "--",
+    "grid.linewidth": 1.2,
+
+    # Figure
+    "figure.dpi": 100,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.05,
+
+    # Axes
+    "axes.linewidth": 1.6,
+    "axes.edgecolor": "black",
+    "axes.facecolor": "white",
+    "xtick.major.width": 1.4,
+    "xtick.minor.width": 1.0,
+    "ytick.major.width": 1.4,
+    "ytick.minor.width": 1.0,
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+
+    # Legend
+    "legend.frameon": True,
+    "legend.framealpha": 0.96,
+    "legend.edgecolor": "black",
+    "legend.fancybox": False,
+})
 
 def plot_infidelity_vs_noise(
     alpha,
@@ -110,6 +133,7 @@ def plot_infidelity_vs_noise(
 ):
     fs = N / T
     threshold = 1e-4
+    n_psd_realizations = 64
 
     angles = get_gate_angles(GATE)
     theta = np.zeros(3)
@@ -131,8 +155,8 @@ def plot_infidelity_vs_noise(
     # ================= LOAD DATA =================
     data = np.load(data_file, allow_pickle=True)
     pulse_types = data["pulse_types"]
-    white_amps = np.array(data["white_amps"])
-    pink_amps = np.array(data["pink_amps"])
+    N0_array = np.array(data["N0_whites"], dtype=float)
+    S1Hz_array = np.array(data["K_flickers"], dtype=float)
 
     # Detect available metrics dynamically (supports partial datasets)
     keys = set(data.keys())
@@ -152,30 +176,6 @@ def plot_infidelity_vs_noise(
 
     # Frequency grid
     f = np.fft.rfftfreq(N, 1 / fs)
-
-    # ================= RMS → PHYSICAL METRICS =================
-    N0_array = white_amps**2 / (fs / 2)
-
-    P_pink = np.zeros(len(pink_amps))
-    Sp_array = np.zeros((100, N//2+1))
-
-    for i, rms_pink in enumerate(pink_amps):
-        for j in range(100):
-            x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
-            x_pink *= rms_pink
-
-            Xp = np.fft.rfft(x_pink)
-            Sp = (2 / (N * fs)) * np.abs(Xp)**2
-
-            Sp_array[j] = Sp
-
-        Sp_mean = np.mean(Sp_array, axis=0)
-
-        df = f[1] - f[0]
-
-        P_pink[i] = np.sum(Sp_mean) * df
-
-    S1Hz_array = P_pink / np.log(f[-1] / f[1])
 
     # ================= LOOP OVER METRICS =================
     for metric in metrics:
@@ -218,7 +218,7 @@ def plot_infidelity_vs_noise(
 
 
         # ================= WHITE NOISE PLOT =================
-        if (inf_white is not None) and (white_amps.size > 0):
+        if (inf_white is not None) and (N0_array.size > 0):
             for pulse in pulse_types:
 
                 y = inf_white[pulse]
@@ -266,7 +266,7 @@ def plot_infidelity_vs_noise(
         inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
 
         # ================= PINK NOISE PLOT =================
-        if (inf_pink is not None) and (pink_amps.size > 0):
+        if (inf_pink is not None) and (S1Hz_array.size > 0):
             for pulse in pulse_types:
                 y = inf_pink[pulse]
                 dy = std_pink[pulse]
@@ -309,8 +309,8 @@ def plot_infidelity_vs_noise(
             save_figure(f"pink_noise_{titles[metric]}", save_dir)
             _maybe_show()
 
-        # ================= THRESHOLD RMS (RC ONLY) =================
-        # Compute thresholds independently for white and pink when QPT metric is available
+        # ================= THRESHOLDS (RC ONLY) =================
+        # Compute thresholds independently for white and flicker when QPT metric is available.
         have_white_qpt = "infidelity_white_qpt" in keys
         have_pink_qpt = "infidelity_pink_qpt" in keys
 
@@ -320,38 +320,44 @@ def plot_infidelity_vs_noise(
         if have_white_qpt:
             RC_white = np.array(data["infidelity_white_qpt"].item().get("RC", []), dtype=float)
             RC_std_white = np.array(data["infidelity_white_std_qpt"].item().get("RC", []), dtype=float)
-            can_white = (RC_white.size > 0) and (RC_std_white.size == RC_white.size) and (white_amps.size == RC_white.size)
+            can_white = (RC_white.size > 0) and (RC_std_white.size == RC_white.size) and (N0_array.size == RC_white.size)
             if can_white:
                 cond_white = (RC_white + 3*RC_std_white) > threshold
                 idx_white = int(np.argmax(cond_white)) if cond_white.any() else RC_white.size - 1
-                rms_white_thr = float(white_amps[idx_white])
                 N0_thr = float(N0_array[idx_white])
                 thresholds_white_ok = True
 
         if have_pink_qpt:
             RC_pink = np.array(data["infidelity_pink_qpt"].item().get("RC", []), dtype=float)
             RC_std_pink = np.array(data["infidelity_pink_std_qpt"].item().get("RC", []), dtype=float)
-            can_pink = (RC_pink.size > 0) and (RC_std_pink.size == RC_pink.size) and (pink_amps.size == RC_pink.size)
+            can_pink = (RC_pink.size > 0) and (RC_std_pink.size == RC_pink.size) and (S1Hz_array.size == RC_pink.size)
             if can_pink:
                 cond_pink = (RC_pink + 3*RC_std_pink) > threshold
                 idx_pink = int(np.argmax(cond_pink)) if cond_pink.any() else RC_pink.size - 1
-                rms_pink_thr = float(pink_amps[idx_pink])
                 S1Hz_thr = float(S1Hz_array[idx_pink])
                 thresholds_pink_ok = True
 
         # ================= PSD AT THRESHOLD =================
         if thresholds_white_ok:
-            x_white, _ = noise_psd(T, N, psd_func=white_psd)
-            x_white *= rms_white_thr
-            Xw = np.fft.rfft(x_white)
-            Sw = 2 / (N * fs) * np.abs(Xw) ** 2
+            x_white, Sw = noise_psd(T, N, N0=N0_thr, K=0.0)
+            nperseg_w =  len(x_white) // 8
+            Sw_welch_stack = []
+            f_welch_w = None
+            for _ in range(n_psd_realizations):
+                xw_i, _ = noise_psd(T, N, N0=N0_thr, K=0.0)
+                fw_i, sw_i = welch(xw_i, fs=fs, nperseg=nperseg_w, scaling="density", window="hann")
+                if f_welch_w is None:
+                    f_welch_w = fw_i
+                Sw_welch_stack.append(sw_i)
+            Sw_welch = np.mean(np.asarray(Sw_welch_stack), axis=0)
 
-            plt.loglog(f[1:-1], Sw[1:-1], label="White noise")
+            plt.loglog(f[1:], Sw, label="White ideal PSD")
+            plt.loglog(f_welch_w[1:], Sw_welch[1:], "--", label=f"White generated PSD (Welch avg, n={n_psd_realizations})")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at white threshold – {titles[metric]}\n"
-                f"white RMS={rms_white_thr*1e3:.3f} mV"
+                f"N0={N0_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -360,22 +366,25 @@ def plot_infidelity_vs_noise(
             _maybe_show()
 
         if thresholds_pink_ok:
-            Sp_array = np.zeros((100, N//2+1))
-            for i in range(100):
-                x_pink, _ = noise_psd(T, N, psd_func=pink_psd)
-                x_pink *= rms_pink_thr
-                Xp = np.fft.rfft(x_pink)
-                Sp_array[i] =  2 / (N * fs) * np.abs(Xp) ** 2
+            x_pink, Sp = noise_psd(T, N, N0=0.0, K=S1Hz_thr)
+            nperseg_p =  len(x_pink) // 8
+            Sp_welch_stack = []
+            f_welch_p = None
+            for _ in range(n_psd_realizations):
+                xp_i, _ = noise_psd(T, N, N0=0.0, K=S1Hz_thr)
+                fp_i, sp_i = welch(xp_i, fs=fs, nperseg=nperseg_p, scaling="density", window="hann")
+                if f_welch_p is None:
+                    f_welch_p = fp_i
+                Sp_welch_stack.append(sp_i)
+            Sp_welch = np.mean(np.asarray(Sp_welch_stack), axis=0)
 
-            # Average PSD over realizations
-            Sp = np.mean(Sp_array, axis=0)
-
-            plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise")
+            plt.loglog(f[1:], Sp, label="Flicker ideal PSD")
+            plt.loglog(f_welch_p[1:], Sp_welch[1:], "--", label=f"Flicker generated PSD (Welch avg, n={n_psd_realizations})")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at pink threshold – {titles[metric]}\n"
-                f"pink RMS={rms_pink_thr*1e3:.3f} mV"
+                f"S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -386,13 +395,15 @@ def plot_infidelity_vs_noise(
 
         if thresholds_white_ok and thresholds_pink_ok:
             # Plot combined PSD (white + pink) at thresholds
-            plt.loglog(f[1:-1], Sw[1:-1], label="White noise PSD @thr")
-            plt.loglog(f[1:-1], Sp[1:-1], label="Flicker noise PSD @thr")
+            plt.loglog(f[1:], Sw, label="White ideal PSD @thr")
+            plt.loglog(f_welch_w[1:], Sw_welch[1:], "--", label="White generated PSD (Welch)")
+            plt.loglog(f[1:], Sp, label="Flicker ideal PSD @thr")
+            plt.loglog(f_welch_p[1:], Sp_welch[1:], "--", label="Flicker generated PSD (Welch)")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at thresholds – {titles[metric]}\n"
-                f"white RMS={rms_white_thr*1e3:.3f} mV, pink RMS={rms_pink_thr*1e3:.3f} mV"
+                f"N0={N0_thr:.3e} V^2/Hz, S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -402,24 +413,17 @@ def plot_infidelity_vs_noise(
 
             # Plot combined histogram / distribution when both are available
             plt.figure(figsize=(16,9))
-            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
-            plt.hist(x_white*1e3, bins=50, alpha=0.3, label="White noise")
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=f"Flicker (S(1Hz)={S1Hz_thr:.2e})")
+            plt.hist(x_white*1e3, bins=50, alpha=0.3, label=f"White (N0={N0_thr:.2e})")
 
             # Overlay system resolution
             resolution = dV
             plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
             plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
-            # 3-sigma lines
-            plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
-            plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
-
-            plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\\sigma$ White = {rms_white_thr*1e3:.2f} mV")
-            plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
-
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nfs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -427,20 +431,16 @@ def plot_infidelity_vs_noise(
         if thresholds_pink_ok:
             # Plot histogram / distribution (pink only)
             plt.figure(figsize=(16,9))
-            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label="Flicker noise")
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=f"Flicker (S(1Hz)={S1Hz_thr:.2e})")
 
             # Overlay system resolution
             resolution = dV
             plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
             plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
-            # 3-sigma lines
-            plt.axvline(rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.', label=f"$\\sigma$ Flicker = {rms_pink_thr *1e3:.2f} mV")
-            plt.axvline(-rms_pink_thr*1e3 + np.mean(x_pink)*1e3, color='b', linestyle='-.')
-
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nS(1Hz)={S1Hz_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -448,20 +448,16 @@ def plot_infidelity_vs_noise(
         if thresholds_white_ok:
             # Plot histogram / distribution (white only)
             plt.figure(figsize=(16,9))
-            plt.hist(x_white*1e3, bins=50, alpha=0.6, label="White noise")
+            plt.hist(x_white*1e3, bins=50, alpha=0.6, label=f"White (N0={N0_thr:.2e})")
 
             # Overlay system resolution
             resolution = dV
             plt.axvline(resolution*1e3, color='k', linestyle='--', label=f"Resolution={resolution*1e3:.2f} mV")
             plt.axvline(-resolution*1e3, color='k', linestyle='--')
 
-            # 3-sigma lines
-            plt.axvline(rms_white_thr*1e3, color='r', linestyle='-.', label=f"$\\sigma$ White = {rms_white_thr*1e3:.2f} mV")
-            plt.axvline(-rms_white_thr*1e3, color='r', linestyle='-.')
-
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nN0={N0_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions White noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -473,7 +469,6 @@ def plot_infidelity_vs_noise(
                 ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
                 ftxt.write("-" * 40 + "\n")
                 ftxt.write("White noise:\n")
-                ftxt.write(f"  RMS threshold = {rms_white_thr:.3e} V\n")
                 ftxt.write(f"  N0 = {N0_thr:.3e} V^2/Hz\n")
 
         if thresholds_pink_ok:
@@ -482,8 +477,7 @@ def plot_infidelity_vs_noise(
                 ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
                 ftxt.write("-" * 40 + "\n")
                 ftxt.write("Flicker noise:\n")
-                ftxt.write(f"  RMS threshold = {rms_pink_thr:.3e} V\n")
-                ftxt.write(f"  S(1 Hz) = {S1Hz_thr:.3e} V^2/Hz\n")
+                ftxt.write(f"  K_flicker = {S1Hz_thr:.3e} V^2\n")
 
         if thresholds_white_ok and thresholds_pink_ok:
             out_file_c = save_dir / "noise_threshold_info_combined.txt"
@@ -491,8 +485,8 @@ def plot_infidelity_vs_noise(
                 ftxt.write(f"Gate: {GATE} - {titles[metric]}\n")
                 ftxt.write("-" * 40 + "\n")
                 ftxt.write("Combined thresholds (white + pink):\n")
-                ftxt.write(f"  White RMS threshold = {rms_white_thr:.3e} V, N0 = {N0_thr:.3e} V^2/Hz\n")
-                ftxt.write(f"  Pink RMS threshold = {rms_pink_thr:.3e} V, S(1 Hz) = {S1Hz_thr:.3e} V^2/Hz\n")
+                ftxt.write(f"  N0 = {N0_thr:.3e} V^2/Hz\n")
+                ftxt.write(f"  K_flicker = {S1Hz_thr:.3e} V^2\n")
 
 
 

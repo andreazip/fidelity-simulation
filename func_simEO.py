@@ -34,7 +34,7 @@ def _one_shot_exchange(args):
         J_offset, V, pulse,
         t_rise, t_fall, tau,
         theta1, theta2, theta3, theta4,
-        white_amp, pink_amp, sigma_jitter,
+        N0_white, K_flicker, sigma_jitter,
         T, N,
         U_ideal_T_mat,
         segments,
@@ -63,8 +63,8 @@ def _one_shot_exchange(args):
         theta4=theta4,
         plot_bloch=False,
         plot_pulse=False,
-        white_amp=white_amp,
-        pink_amp=pink_amp,
+        N0_white=N0_white,
+        K_flicker=K_flicker,
         sigma_jitter=sigma_jitter,
         T=T,
         N=N,
@@ -319,8 +319,8 @@ def run_exchange_qubit_simulation(
     theta4 = np.pi - np.arctan(np.sqrt(8)),
     plot_bloch=False,
     plot_pulse=False,
-    white_amp = 0,
-    pink_amp = 0,
+    N0_white = 0,
+    K_flicker = 0,
     sigma_jitter = 0,
     SAVE_DIR = SAVE_DIR,
     T = 50e-9,
@@ -363,10 +363,10 @@ def run_exchange_qubit_simulation(
         If True, plot Bloch sphere trajectory.
     plot_pulse : bool, optional
         If True, plot pulse sequences (J12/J23 and voltage).
-    white_amp : float, optional
-        Amplitude of white noise applied to pulses.
-    pink_amp : float, optional
-        Amplitude of pink (1/f) noise applied to pulses.
+    N0_white : float, optional
+        One-sided white-noise PSD level in V^2/Hz.
+    K_flicker : float, optional
+        1/f-noise coefficient in V^2 (PSD = K_flicker/f).
     sigma_jitter : float, optional
         RMS of pulse timing jitter (seconds), applied independently to each pulse.
     T : float, optional
@@ -593,11 +593,9 @@ def run_exchange_qubit_simulation(
     V1 = V1 - deltaV
     V2 = V2 + deltaV
 
-    # Generate noises
-    x_white, _ = noise_psd(T, N,  psd_func=lambda f: white_psd(f))
-    x_pink, _  = noise_psd( T, N,  psd_func=lambda f: pink_psd(f))
-    x_white = x_white * white_amp #define rms value of the noise
-    x_pink = x_pink * pink_amp
+    # Generate noises directly from physical PSD parameters.
+    x_white, _ = noise_psd(T, N, N0=N0_white, K=0.0)
+    x_pink, _ = noise_psd(T, N, N0=0.0, K=K_flicker)
 
     # Create interpolated noise functions
     white_func = lambda t: np.interp(t, tlist, x_white)
@@ -709,31 +707,29 @@ def run_exchange_qubit_simulation(
 
     return f, f_pulse, f_QPT, S, U_ideal_T
 
-# Noise generator with arbitrary PSD
-def noise_psd(T, N, psd_func=lambda f: 1):
-        fs = N/T
+# Noise generator using one-sided PSD = N0 + K/f
+def noise_psd(T, N, N0=0.0, K=0.0):
+    fs = N / T
 
-        #generate frequency from 0 to fs*N/2 if N is even
-        freqs = np.fft.rfftfreq(N,1/fs) 
-        #take only the frequencies different than 0 to avoid problems with 1/f
-        freqs = freqs[1:]
-        
-        #N is always even, then the length will be N/2 +1
-        #N-1 always odd (N+1/2)
-        X_white = np.fft.rfft(np.random.randn(N))
+    # Generate positive frequencies and remove DC to avoid 1/f singularity.
+    freqs = np.fft.rfftfreq(N, 1 / fs)[1:]
 
-        S = np.sqrt(psd_func(freqs))
-        S = S/np.sqrt(np.mean(S**2))
+    # Build target one-sided PSD shape in V^2/Hz.
+    psd_shape = N0 * white_psd(freqs) + K * pink_psd(freqs)
+    psd_shape = np.maximum(psd_shape, 0.0)
 
-        #remove the first element of X that is the DC component
-        X_shaped = X_white[1:] * S
+    X_white = np.fft.rfft(np.random.randn(N))
 
-        # Back to time domain
-        x = np.fft.irfft(X_shaped, n=N)
-        # Normalize to unit RMS ---
-        x_rms = x/np.std(x)
+    # Scale each bin so generated noise follows the requested PSD.
+    S = np.sqrt(psd_shape * fs / 2.0)
 
-        return x_rms, S**2
+    # Remove DC component from FFT before shaping (matches freqs above).
+    X_shaped = X_white[1:] * S
+
+    # Back to time domain.
+    x = np.fft.irfft(X_shaped, n=N)
+
+    return x, psd_shape
 
 # PSD functions
 def white_psd(f):
@@ -746,8 +742,8 @@ def pink_psd(f):
 
 def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta3, theta4, t_rise, t_fall, tau,
                                  pulse_types=['square','linear','RC'],
-                                 white_amps=np.linspace(0, 0.001, 10),
-                                 pink_amps=np.linspace(0, 0.0002, 10),
+                                 N0_whites=np.linspace(0, 3e-17, 10),
+                                 K_flickers=np.linspace(0, 5e-9, 10),
                                  iterations=10,
                                  output_file="infidelity_results.npz",
                                  compute_state=True,
@@ -755,7 +751,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                  compute_qpt=True,
                                  n_jobs=None):
     """
-    Simulate qubit infidelity vs white and flicker (pink) noise amplitudes.
+    Simulate qubit infidelity vs white and flicker (pink) noise PSD parameters.
 
     Parameters
     ----------
@@ -766,10 +762,10 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
         Function that calculates QPT fidelity given S_list and U_ideal
     pulse_types : list of str
         List of pulse types to simulate
-    white_amps : np.ndarray
-        Array of RMS white noise amplitudes
-    pink_amps : np.ndarray
-        Array of RMS pink noise amplitudes
+    N0_whites : np.ndarray
+        White-noise PSD levels (V^2/Hz).
+    K_flickers : np.ndarray
+        Flicker-noise coefficients (V^2), with PSD = K_flicker/f.
     iterations : int
         Number of Monte Carlo iterations per amplitude
     output_file : str
@@ -779,6 +775,9 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
     -------
     None
     """
+
+    N0_whites = np.asarray(N0_whites, dtype=float)
+    K_flickers = np.asarray(K_flickers, dtype=float)
 
     # Initialize dictionaries
     infidelity_white = {pulse: [] for pulse in pulse_types}
@@ -876,8 +875,8 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
             tau=tau,
             plot_bloch=False,
             plot_pulse=False,
-            white_amp=0,
-            pink_amp=0,
+            N0_white=0,
+            K_flicker=0,
             T=T,
             N=N,
             segments=segments,
@@ -887,7 +886,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
         )
 
         # White noise sweep
-        for w_amp in tqdm(white_amps, desc=f"{pulse} - White noise", leave=False):
+        for N0_w in tqdm(N0_whites, desc=f"{pulse} - White noise", leave=False):
             fidelities = []
             fidelities_state = []
             S_accum = []
@@ -903,7 +902,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                         J_offset, V, pulse,
                                         t_rise, t_fall, tau,
                                         theta1, theta2, theta3, theta4,
-                                        w_amp, 0, 0,
+                                        N0_w, 0, 0,
                                         T, N,
                                         Umat,
                                         segments,
@@ -925,7 +924,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                         J_offset, V, pulse,
                                         t_rise, t_fall, tau,
                                         theta1, theta2, theta3, theta4,
-                                        w_amp, 0, 0,
+                                        N0_w, 0, 0,
                                         T, N,
                                         Umat,
                                         segments,
@@ -965,8 +964,8 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                 tau=tau,
                                 plot_bloch=False,
                                 plot_pulse=False,
-                                white_amp=w_amp,
-                                pink_amp=0,
+                                N0_white=N0_w,
+                                K_flicker=0,
                                 T=T,
                                 N=N,
                                 U_ideal_T=U_ideal_T,
@@ -1002,7 +1001,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                 infidelity_white_std_state[pulse].append(np.std(1 - fidelities_state))
 
         # Pink noise sweep
-        for p_amp in tqdm(pink_amps, desc=f"{pulse} - Pink noise", leave=False):
+        for K_f in tqdm(K_flickers, desc=f"{pulse} - Pink noise", leave=False):
             fidelities = []
             fidelities_state = []
             S_accum = []
@@ -1018,7 +1017,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                         J_offset, V, pulse,
                                         t_rise, t_fall, tau,
                                         theta1, theta2, theta3, theta4,
-                                        0, p_amp, 0,
+                                        0, K_f, 0,
                                         T, N,
                                         Umat,
                                         segments,
@@ -1039,7 +1038,7 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                         J_offset, V, pulse,
                                         t_rise, t_fall, tau,
                                         theta1, theta2, theta3, theta4,
-                                        0, p_amp, 0,
+                                        0, K_f, 0,
                                         T, N,
                                         Umat,
                                         segments,
@@ -1077,8 +1076,8 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
                                 tau=tau,
                                 plot_bloch=False,
                                 plot_pulse=False,
-                                white_amp=0,
-                                pink_amp=p_amp,
+                                N0_white=0,
+                                K_flicker=K_f,
                                 T=T,
                                 N=N,
                                 U_ideal_T=U_ideal_T,
@@ -1116,8 +1115,8 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
     # Save results
     # Build save dict based on requested metrics
     save_dict = {"pulse_types": pulse_types}
-    save_dict["white_amps"] = white_amps
-    save_dict["pink_amps"] = pink_amps
+    save_dict["N0_whites"] = N0_whites
+    save_dict["K_flickers"] = K_flickers
     if compute_operator:
         save_dict["infidelity_white"] = infidelity_white
         save_dict["infidelity_white_std"] = infidelity_white_std
@@ -1236,8 +1235,8 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
             tau=tau,
             plot_bloch=False,
             plot_pulse=False,
-            white_amp=0,
-            pink_amp=0,
+            N0_white=0,
+            K_flicker=0,
             T=T,
             N=N,
             segments=segments,
@@ -1321,8 +1320,8 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
                                 tau=tau,
                                 plot_bloch=False,
                                 plot_pulse=False,
-                                white_amp=0,
-                                pink_amp=0,
+                                N0_white=0,
+                                K_flicker=0,
                                 sigma_jitter=sigma_j,
                                 T=T,
                                 N=N,
