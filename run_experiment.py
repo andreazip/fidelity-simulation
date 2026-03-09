@@ -18,8 +18,8 @@ from gate_library import get_gate_angles, get_gate_defaults
 
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
-FORCE_EVALUATION = False
-RUN_ALL = True  # shortcut to set all RUN flags to True; overrides individual settings below
+FORCE_EVALUATION = True
+RUN_ALL = True # shortcut to set all RUN flags to True; overrides individual settings below
 RUN = {
     "fidelities": True,
     "heatmaps": False,
@@ -41,20 +41,20 @@ Edit `GATES` and `J_VALUES` to sweep multiple gates and J easily.
 `alpha_list` and `Joffset_list` are kept for noise/jitter sweeps.
 """
 # Physics base
-J_offset = 10e3
+J_offset = 100e3
 alpha = 25
 
 # Sweep sets
-GATES = ["X"]            # e.g., ["X", "Y", "SXH"]
+GATES = ["SXH", "Y", "X"]            # e.g., ["X", "Y", "SXH"]
 J_VALUES = [200e6,100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
-t_rise = 1e-9
-t_fall = 1e-9
-tau = 0.1e-9
+t_rise = 0.5e-9
+t_fall = 0.5e-9
+tau = 0.05e-9
 
 #set infidelity resolution needed:
-inf_res = 1e-6
+DT_PS = 1.5  # target time resolution in ps to capture infidelity features; adjust as needed
 
 # Noise sweeps
 alpha_list = [12.5,25]  # e.g., [12.5, 25.0]
@@ -75,7 +75,7 @@ delta_V_range = 0.4e-3
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 6  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 8  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
@@ -109,7 +109,7 @@ def _print_run_summary(base_dir: Path):
     print(f"alpha                    : {alpha}")
     print(f"t_rise, t_fall (ns)      : {t_rise*1e9:.3f}, {t_fall*1e9:.3f}")
     print(f"tau (ns)                 : {tau*1e9:.3f}")
-    print(f"infidelity resolution    : {inf_res}")
+    print(f"Time resolution (ps)     : {DT_PS} ps")
     print(f"delta_t_range (ps)       : {delta_t_range*1e12:.3f}")
     print(f"delta_V_range (mV)       : {delta_V_range*1e3:.3f}")
     print(f"alpha_list               : {alpha_list}")
@@ -162,8 +162,7 @@ def main():
         for J in J_VALUES:
             # Simulation grid per (gate, J)
             T = 20e6/J*defaults.T + 2e-9 +6*max(t_rise,t_fall, 7*tau) if defaults.T is not None else 80e-9
-            DT_PS = np.sqrt(inf_res/7)/np.pi/J *1e12  # scale with J to maintain resolution in time domain; factor for finer resolution
-            
+           
             N = int(np.ceil(T / (DT_PS * 1e-12)))
             if N % 2 == 1:
                 N += 1

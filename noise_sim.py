@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 from qutip import basis, sesolve, sigmax, sigmay, sigmaz
 import matplotlib.pyplot as plt
-from scipy.signal import welch, get_window
+from scipy.signal import freqs, welch, get_window
 from tqdm import tqdm
 from pathlib import Path
 import re
@@ -37,30 +37,76 @@ PPT_STYLE = {
 plt.rcParams.update(PPT_STYLE)
 
 # Noise generator with arbitrary PSD
-def noise_psd(T, N, psd_func=lambda f: 1):
+def noise_psd(T, N, N0, A):
         fs = N/T
+
+        print(T,fs)
 
         #generate frequency from 0 to fs*N/2 if N is even
         freqs = np.fft.rfftfreq(N,1/fs) 
         #take only the frequencies different than 0 to avoid problems with 1/f
         freqs = freqs[1:]
+        print("Generated frequencies:", freqs[0], "Hz")
+
+        psd_shape = np.zeros_like(freqs)
+        psd_shape = N0*white_psd(freqs) + A *pink_psd(freqs)
         
         #N is always even, then the length will be N/2 +1
         #N-1 always odd (N+1/2)
         X_white = np.fft.rfft(np.random.randn(N))
 
-        S = np.sqrt(psd_func(freqs))
-        S = S/np.sqrt(np.mean(S**2))
+        S = np.sqrt(psd_shape*fs/2) #scaling to get the correct PSD, accounts for rfft normalization and bin width
 
         #remove the first element of X that is the DC component
         X_shaped = X_white[1:] * S
 
         # Back to time domain
         x = np.fft.irfft(X_shaped, n=N)
-        # Normalize to unit RMS ---
-        x_rms = x/np.std(x)
+        
+        return x, S
 
-        return x_rms, S**2
+def test_resolution_independence():
+    # Parameters
+    T_total = 100e-6  # 100 ns simulation window
+    N0_target = 10e-15 # Target White Noise Density (Unit^2/Hz)
+    A_target = 1e-7  # Target Flicker Coefficient
+    
+    # Two different resolutions
+    dt_vals = [1.5e-9, 0.75e-9] # 1.5 ps and 600 fs
+    labels = ['1.5 ps Res', '600 fs Res']
+    colors = ['blue', 'red']
+    
+    plt.figure(figsize=(10, 6))
+
+    for dt, label, col in zip(dt_vals, labels, colors):
+        N = int(T_total / dt)
+        # Ensure N is even for rfft
+        if N % 2 != 0: N += 1
+        
+        # Call your generator (adjusting for your specific function signature)
+        # Assuming psd_func returns N0 + A/f
+        def my_psd(f): return N0_target + A_target/f
+        
+        noise_samples, _ = noise_psd(T_total, N, N0=N0_target, A=A_target)
+        
+        # Estimate PSD using Welch
+        fs = N / T_total
+        f_axis, psd_estimate = welch(noise_samples, fs, nperseg=1024)
+        
+        # Plotting
+        plt.loglog(f_axis, psd_estimate, label=label, color=col, alpha=0.7)
+
+    # Add theoretical lines
+    f_theory = np.logspace(7, 11, 100)
+    plt.loglog(f_theory, N0_target + A_target/f_theory, 'k--', label='Theoretical Target', lw=2)
+    
+    plt.title("PSD Consistency Check: 1.5ps vs 600fs Resolution")
+    plt.xlabel("Frequency (Hz)")
+    plt.ylabel("PSD (Units^2/Hz)")
+    plt.legend()
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.show()
+
 
 # PSD functions
 def white_psd(f):
@@ -192,93 +238,94 @@ def noise_function(t, tlist, noise_array):
     return np.interp(t, tlist, noise_array)
 
 
-# -----------------------------
-# Parameters
-# -----------------------------
-alpha = 25
-Joffset = 10e3
-V0 = 152e-3
-J0 = np.exp(2*alpha*(V0)) * Joffset * 2*np.pi
-theta = np.arctan(np.sqrt(8))
+# # -----------------------------
+# # Parameters
+# # -----------------------------
+# alpha = 25
+# Joffset = 10e3
+# V0 = 152e-3
+# J0 = np.exp(2*alpha*(V0)) * Joffset * 2*np.pi
+# theta = np.arctan(np.sqrt(8))
 
-x_white_rms = 1e-3
-x_pink_rms = 1e-3
+# x_white_rms = 1e-3
+# x_pink_rms = 1e-3
 
-N = 4000
-fs_list = [200/3*1e9]  # two sampling frequencies
+# N = 4000
+# fs_list = [200/3*1e9]  # two sampling frequencies
 
-T = N/fs_list[0]
-print(N, T)
+# T = N/fs_list[0]
+# print(N, T)
 
-# -----------------------------
-# Generate noise for both fs
-# -----------------------------
-for fs in fs_list:
-    # Generate noise
-    x_white, S_white = noise_psd(T, N, psd_func=lambda f:white_psd(f))
-    x_pink, S_pink = noise_psd(T, N, psd_func=lambda f:pink_psd(f))
+# # -----------------------------
+# # Generate noise for both fs
+# # -----------------------------
+# for fs in fs_list:
+#     # Generate noise
+#     x_white, S_white = noise_psd(T, N, psd_func=lambda f:white_psd(f))
+#     x_pink, S_pink = noise_psd(T, N, psd_func=lambda f:pink_psd(f))
 
-    # x_pink2, S_pink2 = noise_psd(T, fs, f_cutoff, psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
-    # x_pink = x_pink + x_pink2[-1]
-    # RMS normalization
-    x_white = x_white_rms * x_white
-    x_pink = x_pink_rms * x_pink
+#     # x_pink2, S_pink2 = noise_psd(T, fs, f_cutoff, psd_func=lambda f, f_cutoff: pink_psd(f, f_cutoff))
+#     # x_pink = x_pink + x_pink2[-1]
+#     # RMS normalization
+#     x_white = x_white_rms * x_white
+#     x_pink = x_pink_rms * x_pink
 
-    #plot_noise(x_white, x_pink, S_white, S_pink, 25e9)
-    # FFT and PSD
-    N = len(x_white)
-    f = np.fft.rfftfreq(N, 1/fs) 
+#     #plot_noise(x_white, x_pink, S_white, S_pink, 25e9)
+#     # FFT and PSD
+#     N = len(x_white)
+#     f = np.fft.rfftfreq(N, 1/fs) 
  
-    X_white = np.fft.rfft(x_white)
-    S_white = 2/(N*fs) * np.abs(X_white)**2
+#     X_white = np.fft.rfft(x_white)
+#     S_white = 2/(N*fs) * np.abs(X_white)**2
     
-    X_pink = np.fft.rfft(x_pink)
-    S_pink = 2/(N*fs) * np.abs(X_pink)**2 #single sideband definition
+#     X_pink = np.fft.rfft(x_pink)
+#     S_pink = 2/(N*fs) * np.abs(X_pink)**2 #single sideband definition
     
-    # Plot PSD
-    plt.figure(figsize=(6,4))
-    plt.loglog(f[1:-1], S_white[1:-1], color='blue')
-    plt.loglog(f[1:-1], S_pink[1:-1], color='red')
-    plt.xlabel("Frequency [Hz]")
-    plt.ylabel("PSD $[mV^2/Hz]$")
-    plt.title(f"Power Spectral Density (fs={fs/1e9:.2e} GHz)")
-    plt.legend(['White','Pink'])
-    plt.grid(True)
+#     # Plot PSD
+#     plt.figure(figsize=(6,4))
+#     plt.loglog(f[1:-1], S_white[1:-1], color='blue')
+#     plt.loglog(f[1:-1], S_pink[1:-1], color='red')
+#     plt.xlabel("Frequency [Hz]")
+#     plt.ylabel("PSD $[mV^2/Hz]$")
+#     plt.title(f"Power Spectral Density (fs={fs/1e9:.2e} GHz)")
+#     plt.legend(['White','Pink'])
+#     plt.grid(True)
 
 
-    # Total power & RMS
-    df = f[1]-f[0]
-    P_white = np.sum(S_white) * df
-    P_pink = np.sum(S_pink) * df 
+#     # Total power & RMS
+#     df = f[1]-f[0]
+#     P_white = np.sum(S_white) * df
+#     P_pink = np.sum(S_pink) * df 
 
-    rms_white = np.std(x_white)
-    rms_pink = np.std(x_pink)
+#     rms_white = np.std(x_white)
+#     rms_pink = np.std(x_pink)
 
-    mean_white = np.mean(x_white)
-    mean_pink = np.mean(x_pink)
+#     mean_white = np.mean(x_white)
+#     mean_pink = np.mean(x_pink)
 
-    print(f"fs = {fs:.0e} Hz")
-    print("White noise: Power =", P_white, "RMS =", rms_white, "Mean =", mean_white)
-    print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink, " \n")
+#     print(f"fs = {fs:.0e} Hz")
+#     print("White noise: Power =", P_white, "RMS =", rms_white, "Mean =", mean_white)
+#     print("Pink noise:  Power =", P_pink,  "RMS =", rms_pink,  "Mean =", mean_pink, " \n")
 
-    N0 = P_white/(fs/2) #kT/C value
-    C_eq = 1.38e-23*100e-3/P_white
-    K_flicker = P_pink/np.log(f[-1]/f[1])
+#     N0 = P_white/(fs/2) #kT/C value
+#     C_eq = 1.38e-23*100e-3/P_white
+#     K_flicker = P_pink/np.log(f[-1]/f[1])
 
-    print(f"Noise floor white noise: {N0*1e6} uV^2/Hz")
-    print(f"The capacitor that produce this thermal noise is about: {C_eq} F \n")
-    print(f"K flicker noise: {K_flicker*1e9} nV^2")
-    print(
-    f"S(f) = K/f with K = {K_flicker*1e9:.3e} nV^2\n"
-    f"S(1 Hz) = {K_flicker*1e9:.3e} nV^2/Hz\n"
-    f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker)*1e6:.3e} uV/sqrt(Hz)\n"
+#     print(f"Noise floor white noise: {N0*1e6} uV^2/Hz")
+#     print(f"The capacitor that produce this thermal noise is about: {C_eq} F \n")
+#     print(f"K flicker noise: {K_flicker*1e9} nV^2")
+#     print(
+#     f"S(f) = K/f with K = {K_flicker*1e9:.3e} nV^2\n"
+#     f"S(1 Hz) = {K_flicker*1e9:.3e} nV^2/Hz\n"
+#     f"sqrt(S(1 Hz)) = {np.sqrt(K_flicker)*1e6:.3e} uV/sqrt(Hz)\n"
 
     
-    )
+#     )
 
-plot_delta_theta(0, 0.001, white = False, flicker = True, N = 4000, T= 60e-9, iterations= 100)
-plot_delta_theta(0, 0.002, white = True, flicker = False, N = 4000, T= 60e-9, iterations = 100)
+# plot_delta_theta(0, 0.001, white = False, flicker = True, N = 4000, T= 60e-9, iterations= 100)
+# plot_delta_theta(0, 0.002, white = True, flicker = False, N = 4000, T= 60e-9, iterations = 100)
 
-plt.show()
+# plt.show()
 
 
+test_resolution_independence()
