@@ -11,6 +11,8 @@ from experiment_utils import (
     run_white_noise_only,
     run_pink_noise_only,
     merge_noise_results,
+    build_simulation_specs_table,
+    plot_simulation_specs_table,
 )
 import plot
 from gate_library import get_gate_angles, get_gate_defaults
@@ -18,7 +20,7 @@ from gate_library import get_gate_angles, get_gate_defaults
 
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
-FORCE_EVALUATION = True
+FORCE_EVALUATION = False
 RUN_ALL = True # shortcut to set all RUN flags to True; overrides individual settings below
 RUN = {
     "fidelities": True,
@@ -28,6 +30,7 @@ RUN = {
     "white_noise": False,     # run white-only
     "pink_noise": False,      # run pink-only
     "noise": False,           # combined plots
+    "table": False,           # build summary specs table
 }
 if RUN_ALL:
     for k in RUN:
@@ -210,10 +213,11 @@ def main():
                 n0_arr = n0_arr[1:]
                 k_arr = np.linspace(0, 4.0 * k_thr, N_noise)
                 k_arr = k_arr[1:]
-                
+
                 return n0_arr, k_arr
 
             sigma_jitters= np.linspace(0, deltat*3, N_noise)
+            sigma_jitters = sigma_jitters[1:]
 
             cfg = ExperimentConfig(
                 J=J,
@@ -304,7 +308,7 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before heatmap plotting for {GATE}, J={J/1e6:.0f}MHz")
                             return
-                        plot.plot_infidelity_heatmaps(hm_file, save_dir=dirs["clean"])
+                        plot.plot_infidelity_heatmaps(hm_file, J=J, save_dir=dirs["clean"])
                     status(f"[STATE {state_counter}] Completed heatmaps {GATE}, J={J/1e6:.0f}MHz")
                     state_counter += 1
                 else:
@@ -314,7 +318,7 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before plot-only heatmap plotting for {GATE}, J={J/1e6:.0f}MHz")
                             return
-                        plot.plot_infidelity_heatmaps(hm_file, save_dir=dirs["clean"])
+                        plot.plot_infidelity_heatmaps(hm_file, J=J, save_dir=dirs["clean"])
                         status(f"[STATE {state_counter}] Completed plot-only heatmaps {GATE}, J={J/1e6:.0f}MHz")
                     else:
                         status(f"[STATE {state_counter}] Plot-only requested but no heatmaps.npz found for {GATE}, J={J/1e6:.0f}MHz")
@@ -565,6 +569,49 @@ def main():
                 status(f"[STATE{state_counter}] Stop before RC thresholds across J")
                 return
             plot.plot_rc_thresholds_across_J(base_dir, J_VALUES)
+
+    # -------- Specs table --------
+    if RUN.get("table"):
+        if should_stop():
+            status(f"[STATE {state_counter}] Stop before specs table generation")
+            return
+
+        status(f"[STATE {state_counter}] Building simulation specs table")
+        rows = build_simulation_specs_table(
+            base_dir=base_dir,
+            threshold=1e-4,
+            pulse="RC",
+            metric="_qpt",
+            t_ref=100e-3,
+        )
+
+        if rows:
+            table_dir = base_dir / "summary"
+            table_dir.mkdir(parents=True, exist_ok=True)
+
+            csv_path = table_dir / "simulation_specs_table.csv"
+            png_path = table_dir / "simulation_specs_table.png"
+
+            import csv
+
+            headers = list(rows[0].keys())
+            with open(csv_path, "w", newline="", encoding="utf-8") as f_csv:
+                writer = csv.DictWriter(f_csv, fieldnames=headers)
+                writer.writeheader()
+                writer.writerows(rows)
+
+            plot_simulation_specs_table(
+                rows,
+                title="Simulation Specs Summary (with heatmap thresholds)",
+                save_path=png_path,
+            )
+
+            status(f"[STATE {state_counter}] Saved specs table CSV: {csv_path}")
+            status(f"[STATE {state_counter}] Saved specs table PNG: {png_path}")
+        else:
+            status(f"[STATE {state_counter}] No rows available for specs table (missing noise data)")
+
+        state_counter += 1
 
 
 if __name__ == '__main__':

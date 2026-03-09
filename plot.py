@@ -255,7 +255,7 @@ def plot_infidelity_vs_noise(
             plt.ylabel("Infidelity")
             plt.title(
                 f"Gate: {GATE} - White Noise – {titles[metric]}\n"
-                f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
+                f"J={J/1e6:.0f} MHz, α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -301,7 +301,7 @@ def plot_infidelity_vs_noise(
             plt.ylabel("Infidelity")
             plt.title(
                 f"Gate : {GATE} - Flicker Noise – {titles[metric]}\n"
-                f"α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
+                f"J={J/1e6:.0f} MHz, α={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -357,7 +357,7 @@ def plot_infidelity_vs_noise(
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at white threshold – {titles[metric]}\n"
-                f"N0={N0_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
+                f"J={J/1e6:.0f} MHz, N0={N0_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -384,7 +384,7 @@ def plot_infidelity_vs_noise(
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at pink threshold – {titles[metric]}\n"
-                f"S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
+                f"J={J/1e6:.0f} MHz, S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -403,7 +403,7 @@ def plot_infidelity_vs_noise(
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
                 f"Gate: {GATE} - PSD at thresholds – {titles[metric]}\n"
-                f"N0={N0_thr:.3e} V^2/Hz, S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
+                f"J={J/1e6:.0f} MHz, N0={N0_thr:.3e} V^2/Hz, S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
             plt.legend()
             plt.grid(True, which="both")
@@ -423,7 +423,7 @@ def plot_infidelity_vs_noise(
 
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nfs={fs/1e9:.2f} GHz")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz, fs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -440,7 +440,7 @@ def plot_infidelity_vs_noise(
 
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nS(1Hz)={S1Hz_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz, S(1Hz)={S1Hz_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -457,7 +457,7 @@ def plot_infidelity_vs_noise(
 
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
-            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nN0={N0_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
+            plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz, N0={N0_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
             plt.legend()
             save_figure(rf"Noise distributions White noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
@@ -560,7 +560,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
 
         plt.plot(sigma_jitters*1e12, inF, label="Ideal infidelity", color="black", marker='x', linestyle = '--')
            
-        title = f"Gate: {GATE} - Infidelity vs Jitter - {titles[metric]}, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
+        title = f"Gate: {GATE} - Infidelity vs Jitter - {titles[metric]}, J = {J/1e6:.0f} MHz, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
 
         save_dir = Path(SAVE_DIR) / titles[metric]
         save_dir.mkdir(parents=True, exist_ok=True)
@@ -601,7 +601,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
 
     plt.xlabel("Noise value [ps]")
     plt.ylabel("Counts")
-    plt.title(f"Gate: {GATE} - Noise distributions vs system resolution")
+    plt.title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz")
     plt.legend()
     save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12:.2f}$ ps", save_dir)
     _maybe_show()
@@ -609,6 +609,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
 
 def plot_infidelity_heatmaps(
     data_file,
+    J=None,
     pulse_types=("square", "linear", "RC"),
     floor_value=1e-6,
     save_dir=None,
@@ -678,7 +679,10 @@ def plot_infidelity_heatmaps(
             vmin=vmin,
             vmax=vmax
         )
-        ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+        if J is None:
+            ax.set_title(f"{pulse_type.capitalize()} pulse", pad=10)
+        else:
+            ax.set_title(f"{pulse_type.capitalize()} pulse (J={J/1e6:.0f} MHz)", pad=10)
         ax.set_xlabel("ΔV [mV]", labelpad=5)
         ax.set_ylabel("Δt [ps]", labelpad=5)
         # Note: resolution markers are shown in individual contour plots below
@@ -748,7 +752,10 @@ def plot_infidelity_heatmaps(
                 handles.append(h2)
                 labels.append(f"ΔV@Δt=0: {dV_thr_uV:.2f} μV")
 
-            plt.title(f"{pulse_type.capitalize()} pulse")
+            if J is None:
+                plt.title(f"{pulse_type.capitalize()} pulse")
+            else:
+                plt.title(f"{pulse_type.capitalize()} pulse (J={J/1e6:.0f} MHz)")
             plt.xlabel("ΔV [mV]")
             plt.ylabel("Δt [ps]")
             plt.colorbar(im, label="log10(Infidelity)")

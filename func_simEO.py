@@ -89,6 +89,64 @@ def _make_executor(n_jobs):
         return ThreadPoolExecutor(max_workers=int(n_jobs))
 
 
+def _one_shot_exchange_batch(batch_args):
+    """Run a chunk of shots in one worker task to reduce IPC/future overhead."""
+    return [_one_shot_exchange(args) for args in batch_args]
+
+
+def _chunk_size(iterations, n_jobs):
+    """Choose a small batch size that amortizes overhead without large latency."""
+    if iterations <= 0:
+        return 1
+    workers = int(n_jobs) if (n_jobs and n_jobs > 1) else 1
+    return max(1, min(iterations, 4 * workers))
+
+
+def _collect_exchange_shots(base_args, iterations, ex=None, chunk_size=1):
+    """Collect Monte Carlo shots either serially or through a shared executor."""
+    if ex is None:
+        return [_one_shot_exchange(base_args) for _ in range(iterations)]
+
+    futures = []
+    submitted = 0
+    while submitted < iterations:
+        n_this = min(chunk_size, iterations - submitted)
+        futures.append(ex.submit(_one_shot_exchange_batch, [base_args] * n_this))
+        submitted += n_this
+
+    out = []
+    for fut in as_completed(futures):
+        out.extend(fut.result())
+    return out
+
+
+def _execute_shots_with_fallback(base_args, iterations, ex, n_jobs, chunk_size):
+    """Try current executor, then threads, then serial if needed."""
+    if ex is None:
+        return _collect_exchange_shots(base_args, iterations, ex=None), None
+
+    try:
+        return _collect_exchange_shots(base_args, iterations, ex=ex, chunk_size=chunk_size), ex
+    except (PicklingError, Exception):
+        try:
+            ex.shutdown(wait=True)
+        except Exception:
+            pass
+
+    if n_jobs and n_jobs > 1:
+        try:
+            ex_thread = ThreadPoolExecutor(max_workers=int(n_jobs))
+            try:
+                shots = _collect_exchange_shots(base_args, iterations, ex=ex_thread, chunk_size=chunk_size)
+                return shots, ex_thread
+            except Exception:
+                ex_thread.shutdown(wait=True)
+        except Exception:
+            pass
+
+    return _collect_exchange_shots(base_args, iterations, ex=None), None
+
+
 PPT_STYLE = {
     "font.size": 20,
     "axes.titlesize": 24,
@@ -885,232 +943,112 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
             compute_qpt=compute_qpt,
         )
 
-        # White noise sweep
-        for N0_w in tqdm(N0_whites, desc=f"{pulse} - White noise", leave=False):
-            fidelities = []
-            fidelities_state = []
-            S_accum = []
-            Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = _make_executor(n_jobs)
-            try:
-                if ex is not None:
-                    try:
-                        futures = [
-                            ex.submit(
-                                    _one_shot_exchange,
-                                    (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        N0_w, 0, 0,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                    ),
-                            ) for __ in range(iterations)
-                        ]
-                    except (PicklingError, Exception):
-                        # Fallback to threads if processes cannot pickle
-                        ex.shutdown(wait=True)
-                        ex = ThreadPoolExecutor(max_workers=int(n_jobs))
-                        futures = [
-                                ex.submit(
-                                    _one_shot_exchange,
-                                    (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        N0_w, 0, 0,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                    ),
-                            ) for __ in range(iterations)
-                        ]
-                    for fut in as_completed(futures):
-                            fid_state, fid_op, _, S_q, _ = fut.result()
-                            if compute_operator:
-                                fidelities.append(fid_op)
-                            if compute_state:
-                                fidelities_state.append(fid_state)
-                            if compute_qpt:
-                                S_accum.append(S_q) #store the superoperator for qpt fidelity calculation
-                            
-                            
-                else:
-                    for __ in range(iterations):
-                        fid_state, fid_op, _, S_q, _ = run_exchange_qubit_simulation(
-                                J_offset=J_offset,
-                                V1=V,
-                                V2=V,
-                                theta1=theta1,
-                                theta2=theta2,
-                                theta3=theta3,
-                                theta4=theta4,
-                                alpha=alpha,
-                                deltaV=0,
-                                pulse_type=pulse,
-                                t_rise=t_rise,
-                                t_fall=t_fall,
-                                deltat=0,
-                                tau=tau,
-                                plot_bloch=False,
-                                plot_pulse=False,
-                                N0_white=N0_w,
-                                K_flicker=0,
-                                T=T,
-                                N=N,
-                                U_ideal_T=U_ideal_T,
-                                segments=segments,
-                                compute_state=compute_state,
-                                compute_operator=compute_operator,
-                                compute_qpt=compute_qpt,
-                        )
-                        if compute_operator:
-                            fidelities.append(fid_op)
-                        if compute_state:
-                            fidelities_state.append(fid_state)
-                        if compute_qpt:
-                            S_accum.append(S_q) #store the superoperator for qpt fidelity calculation
+        Umat = U_ideal_T.full() if U_ideal_T is not None else None
+        ex = _make_executor(n_jobs)
+        shot_chunk = _chunk_size(iterations, n_jobs)
+        try:
+            # White noise sweep
+            for N0_w in tqdm(N0_whites, desc=f"{pulse} - White noise", leave=False):
+                fidelities = []
+                fidelities_state = []
+                S_accum = []
 
-            finally:
-                if ex is not None:
-                    ex.shutdown(wait=True)
-                    
-            if compute_operator:
-                fidelities = np.array(fidelities)
-                infidelity_white[pulse].append(1 - np.mean(fidelities))
-                infidelity_white_std[pulse].append(np.std(1 - fidelities))
+                base_args = (
+                    J_offset, V, pulse,
+                    t_rise, t_fall, tau,
+                    theta1, theta2, theta3, theta4,
+                    N0_w, 0, 0,
+                    T, N,
+                    Umat,
+                    segments,
+                    compute_state, compute_operator, compute_qpt,
+                    alpha,
+                    0,
+                    0,
+                )
 
-            if compute_qpt:
-                fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
-                infidelity_white_qpt[pulse].append(1 - fid_qpt)
-                infidelity_white_std_qpt[pulse].append(0)
+                shots, ex = _execute_shots_with_fallback(
+                    base_args,
+                    iterations,
+                    ex,
+                    n_jobs,
+                    shot_chunk,
+                )
+                for fid_state, fid_op, _, S_q, _ in shots:
+                    if compute_operator:
+                        fidelities.append(fid_op)
+                    if compute_state:
+                        fidelities_state.append(fid_state)
+                    if compute_qpt:
+                        S_accum.append(S_q) #store the superoperator for qpt fidelity calculation
 
-            if compute_state:
-                fidelities_state = np.array(fidelities_state)
-                infidelity_white_state[pulse].append(1 - np.mean(fidelities_state))
-                infidelity_white_std_state[pulse].append(np.std(1 - fidelities_state))
+                if compute_operator:
+                    fidelities = np.array(fidelities)
+                    infidelity_white[pulse].append(1 - np.mean(fidelities))
+                    infidelity_white_std[pulse].append(np.std(1 - fidelities))
 
-        # Pink noise sweep
-        for K_f in tqdm(K_flickers, desc=f"{pulse} - Pink noise", leave=False):
-            fidelities = []
-            fidelities_state = []
-            S_accum = []
-            Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = _make_executor(n_jobs)
-            try:
-                if ex is not None:
-                    try:
-                        futures = [
-                                ex.submit(
-                                    _one_shot_exchange,
-                                    (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        0, K_f, 0,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                    ),
-                                ) for __ in range(iterations)
-                        ]
-                    except (PicklingError, Exception):
-                            ex.shutdown(wait=True)
-                            ex = ThreadPoolExecutor(max_workers=int(n_jobs))
-                            futures = [
-                                ex.submit(
-                                    _one_shot_exchange,
-                                    (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        0, K_f, 0,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                    ),
-                                ) for __ in range(iterations)
-                            ]
-                    for fut in as_completed(futures):
-                        fid_state, fid_op, _, S_q, _ = fut.result()
-                        if compute_operator:
-                            fidelities.append(fid_op)
-                        if compute_state:
-                            fidelities_state.append(fid_state)
-                        if compute_qpt:
-                            S_accum.append(S_q)
-                else:
-                    for __ in range(iterations):
-                        fid_state, fid_op, _, S_q, _ = run_exchange_qubit_simulation(
-                                J_offset=J_offset,
-                                V1=V,
-                                V2=V,
-                                theta1=theta1,
-                                theta2=theta2,
-                                theta3=theta3,
-                                theta4=theta4,
-                                alpha=alpha,
-                                deltaV=0,
-                                pulse_type=pulse,
-                                t_rise=t_rise,
-                                t_fall=t_fall,
-                                deltat=0,
-                                tau=tau,
-                                plot_bloch=False,
-                                plot_pulse=False,
-                                N0_white=0,
-                                K_flicker=K_f,
-                                T=T,
-                                N=N,
-                                U_ideal_T=U_ideal_T,
-                                segments=segments,
-                                compute_state=compute_state,
-                                compute_operator=compute_operator,
-                                compute_qpt=compute_qpt,
-                        )
-                        if compute_operator:
-                            fidelities.append(fid_op)
-                        if compute_state:
-                            fidelities_state.append(fid_state)
-                        if compute_qpt:
-                            S_accum.append(S_q)
-                    
-            finally:
-                if ex is not None:
-                    ex.shutdown(wait=True)
+                if compute_qpt:
+                    fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
+                    infidelity_white_qpt[pulse].append(1 - fid_qpt)
+                    infidelity_white_std_qpt[pulse].append(0)
 
-            if compute_operator:
-                fidelities = np.array(fidelities)
-                infidelity_pink[pulse].append(1 - np.mean(fidelities))
-                infidelity_pink_std[pulse].append(np.std(1 - fidelities))
+                if compute_state:
+                    fidelities_state = np.array(fidelities_state)
+                    infidelity_white_state[pulse].append(1 - np.mean(fidelities_state))
+                    infidelity_white_std_state[pulse].append(np.std(1 - fidelities_state))
 
-            if compute_qpt:
-                fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
-                infidelity_pink_qpt[pulse].append(1 - fid_qpt)
-                infidelity_pink_std_qpt[pulse].append(0)
+            # Pink noise sweep
+            for K_f in tqdm(K_flickers, desc=f"{pulse} - Pink noise", leave=False):
+                fidelities = []
+                fidelities_state = []
+                S_accum = []
 
-            if compute_state:
-                fidelities_state = np.array(fidelities_state)
-                infidelity_pink_state[pulse].append(1 - np.mean(fidelities_state))
-                infidelity_pink_std_state[pulse].append(np.std(1 - fidelities_state))
+                base_args = (
+                    J_offset, V, pulse,
+                    t_rise, t_fall, tau,
+                    theta1, theta2, theta3, theta4,
+                    0, K_f, 0,
+                    T, N,
+                    Umat,
+                    segments,
+                    compute_state, compute_operator, compute_qpt,
+                    alpha,
+                    0,
+                    0,
+                )
+
+                shots, ex = _execute_shots_with_fallback(
+                    base_args,
+                    iterations,
+                    ex,
+                    n_jobs,
+                    shot_chunk,
+                )
+                for fid_state, fid_op, _, S_q, _ in shots:
+                    if compute_operator:
+                        fidelities.append(fid_op)
+                    if compute_state:
+                        fidelities_state.append(fid_state)
+                    if compute_qpt:
+                        S_accum.append(S_q)
+
+                if compute_operator:
+                    fidelities = np.array(fidelities)
+                    infidelity_pink[pulse].append(1 - np.mean(fidelities))
+                    infidelity_pink_std[pulse].append(np.std(1 - fidelities))
+
+                if compute_qpt:
+                    fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
+                    infidelity_pink_qpt[pulse].append(1 - fid_qpt)
+                    infidelity_pink_std_qpt[pulse].append(0)
+
+                if compute_state:
+                    fidelities_state = np.array(fidelities_state)
+                    infidelity_pink_state[pulse].append(1 - np.mean(fidelities_state))
+                    infidelity_pink_std_state[pulse].append(np.std(1 - fidelities_state))
+        finally:
+            if ex is not None:
+                ex.shutdown(wait=True)
 
     # Save results
     # Build save dict based on requested metrics
@@ -1245,118 +1183,62 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
             compute_qpt=compute_qpt,
         )
 
-        for sigma_j in tqdm(sigma_jitters, desc=f"{pulse} - Jitter sweep", leave=False):
-            fidelities = []
-            fidelities_state = []
-            S_accum = []
-            Umat = U_ideal_T.full() if U_ideal_T is not None else None
-            ex = _make_executor(n_jobs)
-            try:
-                if ex is not None:
-                    try:
-                        futures = [
-                            ex.submit(
-                                _one_shot_exchange,
-                                (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        0, 0, sigma_j,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                ),
-                            ) for __ in range(iterations)
-                        ]
-                    except (PicklingError, Exception):
-                            ex.shutdown(wait=True)
-                            ex = ThreadPoolExecutor(max_workers=int(n_jobs))
-                            futures = [
-                                ex.submit(
-                                    _one_shot_exchange,
-                                    (
-                                        J_offset, V, pulse,
-                                        t_rise, t_fall, tau,
-                                        theta1, theta2, theta3, theta4,
-                                        0, 0, sigma_j,
-                                        T, N,
-                                        Umat,
-                                        segments,
-                                        compute_state, compute_operator, compute_qpt,
-                                        alpha,
-                                        0,
-                                        0,
-                                    ),
-                                ) for __ in range(iterations)
-                            ]
-                    for fut in as_completed(futures):
-                        fid_state, fid_op, _, S_q, _ = fut.result()
-                        if compute_operator:
-                            fidelities.append(fid_op)
-                        if compute_state:
-                            fidelities_state.append(fid_state)
-                        if compute_qpt:
-                            S_accum.append(S_q)
-                else:
-                    for __ in range(iterations):
-                        fid_state, fid_op, _, S_q, _ = run_exchange_qubit_simulation(
-                                J_offset=J_offset,
-                                V1=V,
-                                V2=V,
-                                theta1=theta1,
-                                theta2=theta2,
-                                theta3=theta3,
-                                theta4=theta4,
-                                alpha=alpha,
-                                deltaV=0,
-                                pulse_type=pulse,
-                                t_rise=t_rise,
-                                t_fall=t_fall,
-                                deltat=0,
-                                tau=tau,
-                                plot_bloch=False,
-                                plot_pulse=False,
-                                N0_white=0,
-                                K_flicker=0,
-                                sigma_jitter=sigma_j,
-                                T=T,
-                                N=N,
-                                U_ideal_T=U_ideal_T,
-                                segments=segments,
-                                compute_state=compute_state,
-                                compute_operator=compute_operator,
-                                compute_qpt=compute_qpt,
-                        )
-                        if compute_operator:
-                            fidelities.append(fid_op)
-                        if compute_state:
-                            fidelities_state.append(fid_state)
-                        if compute_qpt:
-                            S_accum.append(S_q)
+        Umat = U_ideal_T.full() if U_ideal_T is not None else None
+        ex = _make_executor(n_jobs)
+        shot_chunk = _chunk_size(iterations, n_jobs)
+        try:
+            for sigma_j in tqdm(sigma_jitters, desc=f"{pulse} - Jitter sweep", leave=False):
+                fidelities = []
+                fidelities_state = []
+                S_accum = []
 
-                    
-            finally:
-                if ex is not None:
-                    ex.shutdown(wait=True)
+                base_args = (
+                    J_offset, V, pulse,
+                    t_rise, t_fall, tau,
+                    theta1, theta2, theta3, theta4,
+                    0, 0, sigma_j,
+                    T, N,
+                    Umat,
+                    segments,
+                    compute_state, compute_operator, compute_qpt,
+                    alpha,
+                    0,
+                    0,
+                )
 
-            if compute_operator:
-                fidelities = np.array(fidelities)
-                infidelity_jitter[pulse].append(1 - np.mean(fidelities))
-                infidelity_jitter_std[pulse].append(np.std(1 - fidelities))
+                shots, ex = _execute_shots_with_fallback(
+                    base_args,
+                    iterations,
+                    ex,
+                    n_jobs,
+                    shot_chunk,
+                )
+                for fid_state, fid_op, _, S_q, _ in shots:
+                    if compute_operator:
+                        fidelities.append(fid_op)
+                    if compute_state:
+                        fidelities_state.append(fid_state)
+                    if compute_qpt:
+                        S_accum.append(S_q)
 
-            if compute_qpt:
-                fid_QPT = fidelity_QPT(S_accum, U_ideal_T)
-                infidelity_jitter_qpt[pulse].append(1 - fid_QPT)
-                infidelity_jitter_std_qpt[pulse].append(0)
+                if compute_operator:
+                    fidelities = np.array(fidelities)
+                    infidelity_jitter[pulse].append(1 - np.mean(fidelities))
+                    infidelity_jitter_std[pulse].append(np.std(1 - fidelities))
 
-            if compute_state:
-                fidelities_state = np.array(fidelities_state)
-                infidelity_jitter_state[pulse].append(1 - np.mean(fidelities_state))
-                infidelity_jitter_std_state[pulse].append(np.std(1 - fidelities_state))
+                if compute_qpt:
+                    fid_QPT = fidelity_QPT(S_accum, U_ideal_T)
+                    infidelity_jitter_qpt[pulse].append(1 - fid_QPT)
+                    infidelity_jitter_std_qpt[pulse].append(0)
+
+                if compute_state:
+                    fidelities_state = np.array(fidelities_state)
+                    infidelity_jitter_state[pulse].append(1 - np.mean(fidelities_state))
+                    infidelity_jitter_std_state[pulse].append(np.std(1 - fidelities_state))
+
+        finally:
+            if ex is not None:
+                ex.shutdown(wait=True)
 
     # Save results
     save_dict = {

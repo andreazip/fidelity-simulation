@@ -903,6 +903,57 @@ def _extract_noise_thresholds_from_npz(
     return out
 
 
+def _extract_heatmap_thresholds_from_npz(
+    heatmap_file,
+    pulse="RC",
+    threshold=1e-4,
+):
+    """Extract first dT/dV threshold crossings from a saved 2D heatmap.
+
+    Returns dT in ps and dV in uV, scanning from the (0, 0) operating point
+    toward positive values.
+    """
+    data = np.load(heatmap_file, allow_pickle=True)
+    infidelity_maps = data["infidelity_maps"].item()
+    delta_t_list = np.array(data["delta_t_list"], dtype=float)
+    delta_V_list = np.array(data["delta_V_list"], dtype=float)
+
+    out = {
+        "dT_heatmap_ps": np.nan,
+        "dV_heatmap_uV": np.nan,
+    }
+
+    if pulse not in infidelity_maps:
+        return out
+
+    inf_map = np.array(infidelity_maps[pulse], dtype=float)
+    if inf_map.ndim != 2:
+        return out
+
+    i0 = int(np.argmin(np.abs(delta_t_list)))
+    j0 = int(np.argmin(np.abs(delta_V_list)))
+
+    # dT threshold at dV ~= 0
+    dt_idx = None
+    for ii in range(i0, len(delta_t_list)):
+        if inf_map[ii, j0] > threshold:
+            dt_idx = ii
+            break
+    if dt_idx is not None:
+        out["dT_heatmap_ps"] = delta_t_list[dt_idx] * 1e12
+
+    # dV threshold at dT ~= 0
+    dV_idx = None
+    for jj in range(j0, len(delta_V_list)):
+        if inf_map[i0, jj] > threshold:
+            dV_idx = jj
+            break
+    if dV_idx is not None:
+        out["dV_heatmap_uV"] = delta_V_list[dV_idx] * 1e6
+
+    return out
+
+
 def build_simulation_specs_table(
     base_dir,
     threshold=1e-4,
@@ -937,6 +988,8 @@ def build_simulation_specs_table(
         if not noise_file.exists():
             continue
 
+        heatmap_file = data_dir / "heatmaps.npz"
+
         with open(cfg_file, "r", encoding="utf-8") as f:
             cfg = json.load(f)
 
@@ -963,6 +1016,17 @@ def build_simulation_specs_table(
             fs_hz=fs_hz,
         )
 
+        heatmap_vals = {
+            "dT_heatmap_ps": np.nan,
+            "dV_heatmap_uV": np.nan,
+        }
+        if heatmap_file.exists():
+            heatmap_vals = _extract_heatmap_thresholds_from_npz(
+                heatmap_file=heatmap_file,
+                pulse=pulse,
+                threshold=threshold,
+            )
+
         n0_val = noise_vals["N0"]
         s1hz_val = noise_vals["S_1Hz"]
 
@@ -986,6 +1050,8 @@ def build_simulation_specs_table(
                 "fmax_MHz": fmax_hz / 1e6,
                 "N0": n0_val,
                 "S_1Hz": s1hz_val,
+                "dT_heatmap_ps": heatmap_vals["dT_heatmap_ps"],
+                "dV_heatmap_uV": heatmap_vals["dV_heatmap_uV"],
                 "f_corner_MHz": fcorner_mhz,
                 "Ceq_white_F": ceq_val,
             }
@@ -1027,6 +1093,8 @@ def plot_simulation_specs_table(
         "fmax_MHz": r"$f_{\max}$ (MHz)",
         "N0": r"$N_0$ ($\mathrm{V^2/Hz}$)",
         "S_1Hz": r"$S_{1\mathrm{Hz}}$ ($\mathrm{V^2/Hz}$)",
+        "dT_heatmap_ps": r"$\Delta t_{\mathrm{hm}}$ (ps)",
+        "dV_heatmap_uV": r"$\Delta V_{\mathrm{hm}}$ ($\mu$V)",
         "f_corner_MHz": r"$f_c$ (MHz)",
         "Ceq_white_F": r"$C_{\mathrm{eq,white}}$ (F), $T$=100 mV",
     }
