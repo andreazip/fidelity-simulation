@@ -182,7 +182,7 @@ SAVE_DIR = Path(
 #   Pulse shapes for voltage
 # ------------------------------
 
-def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None, jitter = 0):
+def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None, jitter_start = 0, jitter_end = 0):
     """
     ideal square pulse generation
     """
@@ -194,11 +194,12 @@ def square_pulse(t, t_start, t_end, amp, white_func= None, pink_func= None, jitt
         noise += pink_func(t)
     amp = amp + noise
     
-    t_end = t_end + jitter
+    t_start = t_start + jitter_start
+    t_end = t_end + jitter_end
 
     return amp if (t_start <= t <= t_end) else noise
 
-def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, white_func= None, pink_func= None, jitter = 0):
+def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, white_func= None, pink_func= None, jitter_start = 0, jitter_end = 0):
     """
     square pulse generation with finite rise and fall times
     """
@@ -210,8 +211,8 @@ def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, white_func= None, p
         noise += pink_func(t)
 
     amp = amp + noise
-    t_start_real = t_start 
-    t_end_real = t_end + jitter
+    t_start_real = t_start + jitter_start
+    t_end_real = t_end + jitter_end
 
     if t < t_start_real:
         return noise
@@ -224,7 +225,7 @@ def linear_pulse(t, t_start, t_end, amp, rise=0.0, fall=0.0, white_func= None, p
     else:
         return noise
 
-def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None, jitter = 0):
+def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None, jitter_start = 0, jitter_end = 0):
     """
     RC-like pulse with flat top:
     - Exponential rise: t_start → t_start + 5*tau
@@ -238,8 +239,8 @@ def rc_pulse(t, t_start, t_end, amp, tau, white_func= None, pink_func= None, jit
         noise += pink_func(t)
 
     amp = amp + noise
-    t_start_real = t_start 
-    t_end_real = t_end + jitter
+    t_start_real = t_start + jitter_start
+    t_end_real = t_end + jitter_end
 
     if t < t_start_real or t > t_end_real:
         return noise
@@ -660,7 +661,8 @@ def run_exchange_qubit_simulation(
     pink_func  = lambda t: np.interp(t, tlist, x_pink)
 
     #generate 4 realizations of jitter
-    jitter = np.random.normal(0, sigma_jitter, size=4)
+    jitter_start = np.random.normal(0, sigma_jitter, size=4)
+    jitter_end = np.random.normal(0, sigma_jitter, size=4)
 
     # Parameter list passed into pulse generator
     J12_params = []
@@ -670,41 +672,41 @@ def run_exchange_qubit_simulation(
 
         # J12 pulses
         if t_start1 != t_end1:
-            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, white_func, pink_func, jitter[0]))
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, white_func, pink_func, jitter_start[0], jitter_end[0]))
         if t_start3 != t_end3:
-            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, white_func, pink_func, jitter[2]))
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, white_func, pink_func, jitter_start[2], jitter_end[2]))
         # J23 pulses
         if t_start2 != t_end2:
-            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, white_func, pink_func, jitter[1]))
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, white_func, pink_func, jitter_start[1], jitter_end[1]))
         if t_start4 != t_end4:
-            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2 ,white_func, pink_func, jitter[3]))
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2 ,white_func, pink_func, jitter_start[3], jitter_end[3]))
 
     elif pulse_type == "linear":
         
         # J12 pulses
         if t_start1 != t_end1:
-            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter[0]))
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter_start[0], jitter_end[0]))
         if t_start3 != t_end3:
-            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter[2]))
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, t_rise, t_fall, white_func, pink_func, jitter_start[2], jitter_end[2]))
         # J23 pulses
         if t_start2 != t_end2:
-            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, t_rise, t_fall, white_func, pink_func, jitter[1]))
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, t_rise, t_fall, white_func, pink_func, jitter_start[1], jitter_end[1]))
         if t_start4 != t_end4:
-            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, t_rise, t_fall ,white_func, pink_func, jitter[3]))
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, t_rise, t_fall ,white_func, pink_func, jitter_start[3], jitter_end[3]))
        
     elif pulse_type == "RC":
         
         # J12 pulses
         if t_start1 != t_end1:
-            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, tau, white_func, pink_func, jitter[0]))
+            J12_params.append(( t_start1 + deltat/2, t_end1 - deltat/2, V1, tau, white_func, pink_func, jitter_start[0], jitter_end[0]))
         if t_start3 != t_end3:
-            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, tau, white_func, pink_func, jitter[2]))
+            J12_params.append(( t_start3 + deltat/2, t_end3 - deltat/2, V1, tau, white_func, pink_func, jitter_start[2], jitter_end[2]))
         # J23 pulses
         if t_start2 != t_end2:
-            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, tau, white_func, pink_func, jitter[1]))
+            J23_params.append((t_start2 - deltat/2, t_end2 + deltat/2 , V2, tau, white_func, pink_func, jitter_start[1], jitter_end[1]))
         if t_start4 != t_end4:
-            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, tau, white_func, pink_func, jitter[3]))
-        
+            J23_params.append((t_start4 - deltat/2, t_end4 + deltat/2 , V2, tau, white_func, pink_func, jitter_start[3], jitter_end[3]))
+    
     # Prepare functions J12(t), J23(t) for non-ideal pulses
     J12_func = make_pulse_function(alpha, J_offset, pulse_type, J12_params)
     J23_func = make_pulse_function(alpha, J_offset, pulse_type, J23_params)

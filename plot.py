@@ -340,7 +340,7 @@ def plot_infidelity_vs_noise(
         # ================= PSD AT THRESHOLD =================
         if thresholds_white_ok:
             x_white, Sw = noise_psd(T, N, N0=N0_thr, K=0.0)
-            nperseg_w =  len(x_white) // 8
+            nperseg_w =  len(x_white) 
             Sw_welch_stack = []
             f_welch_w = None
             for _ in range(n_psd_realizations):
@@ -352,7 +352,7 @@ def plot_infidelity_vs_noise(
             Sw_welch = np.mean(np.asarray(Sw_welch_stack), axis=0)
 
             plt.loglog(f[1:], Sw, label="White ideal PSD")
-            plt.loglog(f_welch_w[1:], Sw_welch[1:], "--", label=f"White generated PSD (Welch avg, n={n_psd_realizations})")
+            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label=f"White generated PSD (Welch avg, n={n_psd_realizations})")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
@@ -367,7 +367,7 @@ def plot_infidelity_vs_noise(
 
         if thresholds_pink_ok:
             x_pink, Sp = noise_psd(T, N, N0=0.0, K=S1Hz_thr)
-            nperseg_p =  len(x_pink) // 8
+            nperseg_p =  len(x_pink) 
             Sp_welch_stack = []
             f_welch_p = None
             for _ in range(n_psd_realizations):
@@ -379,7 +379,7 @@ def plot_infidelity_vs_noise(
             Sp_welch = np.mean(np.asarray(Sp_welch_stack), axis=0)
 
             plt.loglog(f[1:], Sp, label="Flicker ideal PSD")
-            plt.loglog(f_welch_p[1:], Sp_welch[1:], "--", label=f"Flicker generated PSD (Welch avg, n={n_psd_realizations})")
+            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label=f"Flicker generated PSD (Welch avg, n={n_psd_realizations})")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(
@@ -396,9 +396,9 @@ def plot_infidelity_vs_noise(
         if thresholds_white_ok and thresholds_pink_ok:
             # Plot combined PSD (white + pink) at thresholds
             plt.loglog(f[1:], Sw, label="White ideal PSD @thr")
-            plt.loglog(f_welch_w[1:], Sw_welch[1:], "--", label="White generated PSD (Welch)")
+            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label="White generated PSD (Welch)")
             plt.loglog(f[1:], Sp, label="Flicker ideal PSD @thr")
-            plt.loglog(f_welch_p[1:], Sp_welch[1:], "--", label="Flicker generated PSD (Welch)")
+            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label="Flicker generated PSD (Welch)")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             plt.title(

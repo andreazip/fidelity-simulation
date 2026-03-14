@@ -1,6 +1,8 @@
 import os
+import json
 import numpy as np
 from pathlib import Path
+import func_simEO as EO
 from experiment_utils import ExperimentConfig, experiment_dirs, save_config
 from experiment_utils import (
     run_clean_fidelities,
@@ -11,7 +13,8 @@ from experiment_utils import (
     run_white_noise_only,
     run_pink_noise_only,
     merge_noise_results,
-    build_simulation_specs_table,
+    _extract_noise_thresholds_from_npz,
+    _extract_heatmap_thresholds_from_npz,
     plot_simulation_specs_table,
 )
 import plot
@@ -21,20 +24,24 @@ from gate_library import get_gate_angles, get_gate_defaults
 # ----- User parameters -----
 # When True, run all simulations fresh into a new versioned results folder
 FORCE_EVALUATION = False
-RUN_ALL = True # shortcut to set all RUN flags to True; overrides individual settings below
+RUN_ALL = False # shortcut to set all RUN flags to True; overrides individual settings below
 RUN = {
-    "fidelities": True,
+    "single_shot_check": False,  # one quick fidelity+plot sanity check and exit
+    "fidelities": False,
     "heatmaps": False,
     "heatmaps_all": False,
     "jitter": False,
     "white_noise": False,     # run white-only
     "pink_noise": False,      # run pink-only
     "noise": False,           # combined plots
-    "table": False,           # build summary specs table
+    "table": True,           # build summary specs table
 }
 if RUN_ALL:
     for k in RUN:
-        RUN[k] = True
+        if k=="single_shot_check":
+            RUN[k] = False
+        else:
+            RUN[k] = True
 
 PLOT_ONLY = False
 
@@ -44,11 +51,11 @@ Edit `GATES` and `J_VALUES` to sweep multiple gates and J easily.
 `alpha_list` and `Joffset_list` are kept for noise/jitter sweeps.
 """
 # Physics base
-J_offset = 100e3
-alpha = 25
+J_offset = 1e3
+alpha = 25.0
 
 # Sweep sets
-GATES = ["SXH", "Y", "X"]            # e.g., ["X", "Y", "SXH"]
+GATES = ["X"]            # e.g., ["X", "Y", "SXH"]
 J_VALUES = [200e6, 100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
@@ -58,10 +65,13 @@ tau = 0.05e-9
 
 #set infidelity resolution needed:
 target_infidelity= 10**(-5.5)  # target time resolution in ps to capture infidelity features; adjust as needed
+target_infidelity_jitter= 10**(-6)  # target time resolution in ps to capture infidelity features; adjust as needed
+                
 DT_ps = np.sqrt(target_infidelity/7/np.sqrt(2))/np.pi*1e12 #time in ps, multiplied by J
+DT_ps_jitter = np.sqrt(target_infidelity_jitter/7/np.sqrt(2))/np.pi*1e12 #time in ps, multiplied by J
 
 # Noise sweeps
-alpha_list = [25,12.5]  # e.g., [12.5, 25.0]
+alpha_list = [12.5, 25.0]  # e.g., [12.5, 25.0]
 Joffset_list = [1e3, 10e3, 100e3]
 
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
@@ -79,7 +89,7 @@ delta_V_range = 0.4e-3
 N_space = 25
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
-N_JOBS = 5  # e.g., use os.cpu_count()-1 for max cores
+N_JOBS = 8  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
 BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
@@ -113,7 +123,7 @@ def _print_run_summary(base_dir: Path):
     print(f"alpha                    : {alpha}")
     print(f"t_rise, t_fall (ns)      : {t_rise*1e9:.3f}, {t_fall*1e9:.3f}")
     print(f"tau (ns)                 : {tau*1e9:.3f}")
-    print(f"Time resolution (ps)     : {[f'{DT_ps/j:.2f} ps * J, J = {j/1e6:.0f} MHz' for j in J_VALUES]}")
+    print(f"Time resolution (ps)     : {[f'{DT_ps/j:.2f} ps , J = {j/1e6:.0f} MHz' for j in J_VALUES]}")
     print(f"delta_t_range (ps)       : {delta_t_range*1e12:.3f}")
     print(f"delta_V_range (mV)       : {delta_V_range*1e3:.3f}")
     print(f"alpha_list               : {alpha_list}")
@@ -139,6 +149,209 @@ def should_stop() -> bool:
     return STOP_REQUESTED
 
 
+def _theta_from_cfg_dict(cfg_dict: dict) -> np.ndarray:
+    theta = np.zeros(3)
+    theta[0] = float(cfg_dict.get("theta1", 0.0))
+    if theta[0] == 0.0:
+        theta[0] = float(cfg_dict.get("theta2", 0.0))
+        theta[1] = float(cfg_dict.get("theta3", 0.0))
+        theta[2] = float(cfg_dict.get("theta4", 0.0))
+    else:
+        theta[1] = float(cfg_dict.get("theta2", 0.0))
+        theta[2] = float(cfg_dict.get("theta3", 0.0))
+    return theta
+
+
+def _collect_specs_rows_from_outputs(
+    base_dir: Path,
+    threshold: float = 1e-4,
+    pulse: str = "RC",
+    metric: str = "_qpt",
+    t_ref: float = 100e-3,
+):
+    """Build specs rows by directly scanning saved run outputs on disk."""
+    base_dir = Path(base_dir)
+    k_b = 1.38e-23
+
+    # Keyed by (gate, J, alpha, Joff) to avoid duplicates when multiple cfg IDs exist.
+    rows_by_key: dict[tuple[str, float, float, float], dict] = {}
+
+    cfg_dirs = sorted(base_dir.glob("gates/*/J=*/alpha=*/Joff=*/white_flicker_noise/cfg_*"))
+    for cfg_dir in cfg_dirs:
+        cfg_file = cfg_dir / "config.json"
+        data_dir = cfg_dir / "Data"
+        if not (cfg_file.exists() and data_dir.exists()):
+            continue
+
+        noise_file = data_dir / "noise.npz"
+        if not noise_file.exists():
+            white_file = data_dir / "white_noise.npz"
+            pink_file = data_dir / "pink_noise.npz"
+            if white_file.exists() and pink_file.exists():
+                merged = merge_noise_results({"data": data_dir})
+                if merged is not None:
+                    noise_file = merged
+        if not noise_file.exists():
+            continue
+
+        with open(cfg_file, "r", encoding="utf-8") as f:
+            cfg = json.load(f)
+
+        gate_name = cfg_dir.parents[4].name
+        j_hz = float(cfg["J"])
+        joff_hz = float(cfg["J_offset"])
+        alpha_val = float(cfg["alpha"])
+        t_total = float(cfg["T"])
+        n_points = int(cfg["N"])
+
+        theta = _theta_from_cfg_dict(cfg)
+        theta_min = float(np.min(theta))
+        if theta_min <= 0:
+            continue
+
+        fs_hz = n_points / t_total
+        fmin_hz = 1.0 / t_total
+        fmax_hz = 2.0 * np.pi * j_hz / theta_min
+
+        noise_vals = _extract_noise_thresholds_from_npz(
+            noise_file=noise_file,
+            pulse=pulse,
+            metric=metric,
+            threshold=threshold,
+            fmin_hz=fmin_hz,
+            fmax_hz=fmax_hz,
+            fs_hz=fs_hz,
+        )
+
+        heatmap_vals = {
+            "dT_heatmap_ps": np.nan,
+            "dV_heatmap_uV": np.nan,
+        }
+        heatmap_pattern = (
+            base_dir
+            / "gates"
+            / gate_name
+            / f"J={j_hz/1e6:.0f}MHz"
+            / f"alpha={alpha_val:.1f}"
+            / f"Joff={joff_hz/1e3:.0f}kHz"
+            / "heatmaps"
+            / "cfg_*"
+            / "Data"
+            / "heatmaps.npz"
+        )
+        heatmap_candidates = sorted(base_dir.glob(str(heatmap_pattern.relative_to(base_dir))))
+        if heatmap_candidates:
+            heatmap_vals = _extract_heatmap_thresholds_from_npz(
+                heatmap_file=heatmap_candidates[-1],
+                pulse=pulse,
+                threshold=threshold,
+            )
+
+        n0_val = noise_vals["N0"]
+        s1hz_val = noise_vals["S_1Hz"]
+
+        fcorner_mhz = np.nan
+        if np.isfinite(n0_val) and (n0_val > 0) and np.isfinite(s1hz_val):
+            fcorner_mhz = (s1hz_val / n0_val) / 1e6
+
+        ceq_val = np.nan
+        if np.isfinite(n0_val) and (n0_val > 0):
+            p_white = n0_val * fmax_hz
+            ceq_val = k_b * t_ref / p_white
+
+        row = {
+            "gate": gate_name,
+            "Joffset_Hz": joff_hz / 1e3,
+            "alpha": alpha_val,
+            "J_Hz": j_hz / 1e6,
+            "V_V": float(EO.V(J=j_hz, alpha=alpha_val, J0=joff_hz)) * 1e3,
+            "fmin_MHz": fmin_hz / 1e6,
+            "fmax_MHz": fmax_hz / 1e6,
+            "N0": n0_val,
+            "S_1Hz": s1hz_val,
+            "dT_heatmap_ps": heatmap_vals["dT_heatmap_ps"],
+            "dV_heatmap_uV": heatmap_vals["dV_heatmap_uV"],
+            "f_corner_MHz": fcorner_mhz,
+            "Ceq_white_F": ceq_val,
+        }
+
+        key = (gate_name, j_hz, alpha_val, joff_hz)
+        rows_by_key[key] = row
+
+    rows = list(rows_by_key.values())
+    rows.sort(key=lambda r: (r["J_Hz"], r["gate"], r["alpha"], r["Joffset_Hz"]))
+    return rows
+
+
+def run_single_shot_check(base_dir: Path):
+    """Run one quick Y-gate check with fixed jitter and time resolution."""
+    gate = "Y"
+    J = 100e6
+    alpha_val = 12.5
+    Joff = 1e3
+    dt_resolution = 1.8e-12  # 1.8 ps
+    sigma_jitter = 0   # 20 ps
+
+    angles = get_gate_angles(gate)
+    defaults = get_gate_defaults(gate)
+
+    T = 20e6 / J * defaults.T + 2e-9 + 6 * max(t_rise, t_fall, 7 * tau) if defaults.T is not None else 80e-9
+    N = int(np.ceil(T / dt_resolution))
+    if N % 2 == 1:
+        N += 1
+
+    V = EO.V(J=J, alpha=alpha_val, J0=Joff)
+
+    check_dir = base_dir / "single_shot_check"
+    check_dir.mkdir(parents=True, exist_ok=True)
+
+    print("=== Single Shot Check ===")
+    print(f"Gate      : {gate}")
+    print(f"J         : {J/1e6:.1f} MHz")
+    print(f"alpha     : {alpha_val}")
+    print(f"J_offset  : {Joff/1e3:.1f} kHz")
+    print(f"dt        : {dt_resolution*1e12:.2f} ps")
+    print(f"sigma_jit : {sigma_jitter*1e12:.2f} ps")
+    print(f"T         : {T*1e9:.2f} ns")
+    print(f"N         : {N}")
+
+    for pulse in ["square", "linear", "RC"]:
+        sf, of, qf, _, _ = EO.run_exchange_qubit_simulation(
+            J_offset=Joff,
+            V1=V,
+            V2=V,
+            theta1=angles.theta1,
+            theta2=angles.theta2,
+            theta3=angles.theta3,
+            theta4=angles.theta4,
+            alpha=alpha_val,
+            deltaV=0.0,
+            deltat=0,
+            pulse_type=pulse,
+            t_rise=t_rise,
+            t_fall=t_fall,
+            tau=tau,
+            N0_white=0.0,
+            K_flicker=0.0,
+            sigma_jitter=sigma_jitter,
+            plot_pulse=True,
+            plot_bloch=False,
+            SAVE_DIR=check_dir,
+            T=T,
+            N=N,
+            compute_state=True,
+            compute_operator=True,
+            compute_qpt=True,
+        )
+
+        print(
+            f"[{pulse}] state fidelity={sf:.8e}, "
+            f"operator fidelity={of:.8e}, qpt fidelity={qf:.8e}"
+        )
+
+    print(f"[DONE] Single-shot outputs saved in: {check_dir}")
+
+
 def main():
     state_counter = 1  # counter for printing states
     # Determine output base directory for this run
@@ -152,6 +365,11 @@ def main():
         # PLOT_ONLY = False
     _print_run_summary(base_dir)
     status("[STATUS] Runner initialized")
+
+    if RUN.get("single_shot_check"):
+        status("[STATUS] Running single-shot check mode")
+        run_single_shot_check(base_dir)
+        return
 
     # --------------------- RUN SIMULATIONS ---------------------
     for GATE in GATES:
@@ -234,7 +452,7 @@ def main():
                 N=N,
             )
 
-            dirs = experiment_dirs(base_dir, cfg, GATE)
+            dirs = experiment_dirs(base_dir, cfg, GATE, domain="heatmaps")
             save_config(cfg, dirs["root"])
 
             # -------- Clean fidelities --------
@@ -254,7 +472,7 @@ def main():
                     T=T,
                     N=N,
                 )
-                dirs_dt = experiment_dirs(base_dir, cfg_dt, GATE)
+                dirs_dt = experiment_dirs(base_dir, cfg_dt, GATE, domain="fidelities")
                 save_config(cfg_dt, dirs_dt["root"])
 
                 fid_file_dt = dirs_dt["data"] / "fidelities.npz"
@@ -281,7 +499,7 @@ def main():
                     T=T,
                     N=N,
                 )
-                dirs_dV = experiment_dirs(base_dir, cfg_dV, GATE)
+                dirs_dV = experiment_dirs(base_dir, cfg_dV, GATE, domain="fidelities")
                 save_config(cfg_dV, dirs_dV["root"])
 
                 fid_file_dV = dirs_dV["data"] / "fidelities.npz"
@@ -326,6 +544,13 @@ def main():
 
             # -------- Jitter --------
             if RUN["jitter"]:
+                #set infidelity resolution needed:
+                DT_PS_jitter = DT_ps_jitter/J
+
+                N_jitter = int(np.ceil(T / (DT_PS_jitter * 1e-12)))
+                if N_jitter % 2 == 1:
+                    N_jitter += 1
+                    
                 for alpha_val in alpha_list:
                     for Joff in Joffset_list:
                         cfg_loop = ExperimentConfig(
@@ -340,9 +565,9 @@ def main():
                             t_fall=t_fall,
                             tau=tau,
                             T=T,
-                            N=N,
+                            N=N_jitter,
                         )
-                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE)
+                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE, domain="jitter")
 
                         if not PLOT_ONLY:
                             if should_stop():
@@ -356,13 +581,14 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before jitter plotting for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                             return
-                        plot.plot_infidelity_vs_jitter(cfg_loop.alpha, cfg_loop.J_offset, N, deltat, J, GATE, j_file, SAVE_DIR=dirs_loop["noise"])
+                        plot.plot_infidelity_vs_jitter(cfg_loop.alpha, cfg_loop.J_offset, N_jitter, deltat, J, GATE, j_file, SAVE_DIR=dirs_loop.get("noise_jitter", dirs_loop["noise"]))
                         status(f"[STATE {state_counter}] Completed jitter for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                         state_counter += 1
 
             # -------- White-only --------
             if RUN.get("white_noise"):
                 for alpha_val in alpha_list:
+                    deltaV_wn = deltaV*25/alpha_val 
                     for Joff in Joffset_list:
                         cfg_loop = ExperimentConfig(
                             J=J,
@@ -378,7 +604,7 @@ def main():
                             T=T,
                             N=N,
                         )
-                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE)
+                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE, domain="white_flicker_noise")
 
                         if not PLOT_ONLY:
                             if should_stop():
@@ -393,13 +619,14 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before white-noise plotting for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                             return
-                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file_w, N, T, deltaV, J, GATE, SAVE_DIR=dirs_loop["noise"])
+                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file_w, N, T, deltaV_wn, J, GATE, SAVE_DIR=dirs_loop.get("noise_voltage", dirs_loop["noise"]))
                         status(f"[STATE {state_counter}] Completed white-noise: {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                         state_counter += 1
 
             # -------- Pink-only --------
             if RUN.get("pink_noise"):
                 for alpha_val in alpha_list:
+                    deltaV_pn = deltaV*25/alpha_val
                     for Joff in Joffset_list:
                         cfg_loop = ExperimentConfig(
                             J=J,
@@ -415,7 +642,7 @@ def main():
                             T=T,
                             N=N,
                         )
-                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE)
+                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE, domain="white_flicker_noise")
 
                         if not PLOT_ONLY:
                             if should_stop():
@@ -430,7 +657,7 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before pink-noise plotting for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                             return
-                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file_p, N, T, deltaV, J, GATE, SAVE_DIR=dirs_loop["noise"])
+                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file_p, N, T, deltaV_pn, J, GATE, SAVE_DIR=dirs_loop.get("noise_voltage", dirs_loop["noise"]))
                         status(f"[STATE {state_counter}] Completed pink-noise: {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                         state_counter += 1
 
@@ -452,7 +679,7 @@ def main():
                             T=T,
                             N=N,
                         )
-                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE)
+                        dirs_loop = experiment_dirs(base_dir, cfg_loop, GATE, domain="white_flicker_noise")
 
                         combined_path = dirs_loop["data"] / "noise.npz"
                         white_path = dirs_loop["data"] / "white_noise.npz"
@@ -497,7 +724,7 @@ def main():
                         if should_stop():
                             status(f"[STATE {state_counter}] Stop before combined-noise plotting for {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                             return
-                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file, N, T, deltaV, J, GATE, SAVE_DIR=dirs_loop["noise"])
+                        plot.plot_infidelity_vs_noise(cfg_loop.alpha, cfg_loop.J_offset, n_file, N, T, deltaV, J, GATE, SAVE_DIR=dirs_loop.get("noise_voltage", dirs_loop["noise"]))
                         status(f"[STATE {state_counter}] Completed noise (combined): {GATE}, J={J/1e6:.0f}MHz, α={alpha_val}, Joff={Joff/1e3:.0f}kHz")
                         state_counter += 1
 
@@ -577,7 +804,7 @@ def main():
             return
 
         status(f"[STATE {state_counter}] Building simulation specs table")
-        rows = build_simulation_specs_table(
+        rows = _collect_specs_rows_from_outputs(
             base_dir=base_dir,
             threshold=1e-4,
             pulse="RC",
@@ -585,29 +812,54 @@ def main():
             t_ref=100e-3,
         )
 
+        # Keep summary consistent with the configured sweeps in this file.
+        allowed_alphas = {float(a) for a in alpha_list}
+        allowed_joffset_khz = {float(j / 1e3) for j in Joffset_list}
+        rows = [
+            r for r in rows
+            if (float(r.get("alpha", np.nan)) in allowed_alphas)
+            and (float(r.get("Joffset_Hz", np.nan)) in allowed_joffset_khz)
+        ]
+
         if rows:
             table_dir = base_dir / "summary"
             table_dir.mkdir(parents=True, exist_ok=True)
-
-            csv_path = table_dir / "simulation_specs_table.csv"
-            png_path = table_dir / "simulation_specs_table.png"
-
             import csv
 
-            headers = list(rows[0].keys())
-            with open(csv_path, "w", newline="", encoding="utf-8") as f_csv:
-                writer = csv.DictWriter(f_csv, fieldnames=headers)
-                writer.writeheader()
-                writer.writerows(rows)
+            # Group by gate: one table per gate with all alpha/Joffset combinations.
+            rows_by_gate = {}
+            for row in rows:
+                gate_name = row.get("gate", "unknown")
+                rows_by_gate.setdefault(gate_name, []).append(row)
 
-            plot_simulation_specs_table(
-                rows,
-                title="Simulation Specs Summary (with heatmap thresholds)",
-                save_path=png_path,
-            )
+            for gate_name, gate_rows in rows_by_gate.items():
+                gate_rows = sorted(
+                    gate_rows,
+                    key=lambda r: (
+                        float(r.get("J_Hz", 0.0)),
+                        float(r.get("alpha", 0.0)),
+                        float(r.get("Joffset_Hz", 0.0)),
+                    ),
+                )
 
-            status(f"[STATE {state_counter}] Saved specs table CSV: {csv_path}")
-            status(f"[STATE {state_counter}] Saved specs table PNG: {png_path}")
+                safe_gate = str(gate_name).replace("/", "_").replace("\\", "_")
+                csv_path = table_dir / f"simulation_specs_table_{safe_gate}.csv"
+                png_path = table_dir / f"simulation_specs_table_{safe_gate}.png"
+
+                headers = list(gate_rows[0].keys())
+                with open(csv_path, "w", newline="", encoding="utf-8") as f_csv:
+                    writer = csv.DictWriter(f_csv, fieldnames=headers)
+                    writer.writeheader()
+                    writer.writerows(gate_rows)
+
+                plot_simulation_specs_table(
+                    gate_rows,
+                    title=f"Simulation Specs Summary - Gate {gate_name}",
+                    save_path=png_path,
+                )
+
+                status(f"[STATE {state_counter}] Saved specs table CSV ({gate_name}): {csv_path}")
+                status(f"[STATE {state_counter}] Saved specs table PNG ({gate_name}): {png_path}")
         else:
             status(f"[STATE {state_counter}] No rows available for specs table (missing noise data)")
 

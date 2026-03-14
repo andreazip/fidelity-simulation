@@ -56,20 +56,41 @@ def experiment_id(cfg: ExperimentConfig) -> str:
     return hashlib.sha1(s.encode()).hexdigest()[:8]
 
 def _alpha_folder_str(alpha: float) -> str:
-    """Format alpha for folder names: integer if integral else one decimal."""
+    """Format alpha for folder names using a canonical float string (one decimal)."""
     aval = round(float(alpha), 1)
-    return str(int(aval)) if float(aval).is_integer() else f"{aval:.1f}"
+    return f"{aval:.1f}"
 
-def experiment_dirs(base: Path, cfg: ExperimentConfig, GATE = "X"):
+def experiment_dirs(base: Path, cfg: ExperimentConfig, GATE = "X", domain: str = "white_flicker_noise"):
     cfg_id = experiment_id(cfg)
     alpha_str = _alpha_folder_str(cfg.alpha)
-    root = base /"gates"/ GATE/ f"J={cfg.J/1e6:.0f}MHz" / f"alpha={alpha_str}" / f"Joff={cfg.J_offset/1e3:.0f}kHz" / f"cfg_{cfg_id}"
+    domain_map = {
+        "noise": "white_flicker_noise",
+        "white_flicker_noise": "white_flicker_noise",
+        "jitter": "jitter",
+        "heatmaps": "heatmaps",
+        "fidelities": "fidelities",
+    }
+    domain_name = domain_map.get(str(domain).lower(), str(domain))
+
+    root = (
+        base
+        / "gates"
+        / GATE
+        / f"J={cfg.J/1e6:.0f}MHz"
+        / f"alpha={alpha_str}"
+        / f"Joff={cfg.J_offset/1e3:.0f}kHz"
+        / domain_name
+        / f"cfg_{cfg_id}"
+    )
     dirs = {
         "root": root,
         "data": root / "Data",
         "plots": root / "Plots",
-        "clean": root / "Plots/Clean",
-        "noise": root / "Plots/Noise",
+        # Keep legacy keys but flatten all plot outputs directly under Plots.
+        "clean": root / "Plots",
+        "noise": root / "Plots",
+        "noise_jitter": root / "Plots",
+        "noise_voltage": root / "Plots",
     }
     for d in dirs.values():
         d.mkdir(parents=True, exist_ok=True)
@@ -385,7 +406,7 @@ def run_test_gates_heatmaps(
             deltat=0.0,
         )
 
-        dirs = experiment_dirs(test_root, cfg, gate_name)
+        dirs = experiment_dirs(test_root, cfg, gate_name, domain="heatmaps")
 
         heatmap_file = dirs["data"] / "heatmaps_1D.npz"
         if heatmap_file.exists():
@@ -971,7 +992,7 @@ def build_simulation_specs_table(
     base_dir = Path(base_dir)
     rows = []
 
-    for cfg_file in sorted(base_dir.glob("gates/*/J=*/alpha=*/Joff=*/cfg_*/config.json")):
+    for cfg_file in sorted(base_dir.glob("gates/*/J=*/alpha=*/Joff=*/*/cfg_*/config.json")):
         gate_name = cfg_file.parents[4].name
         cfg_root = cfg_file.parent
         data_dir = cfg_root / "Data"

@@ -91,12 +91,17 @@ def test_resolution_independence():
         
         # Estimate PSD using Welch
         fs = N / T_total
-        f_axis, psd_estimate = welch(noise_samples, fs, nperseg=N//8, window='hann', scaling='density')
+        f_axis, psd_estimate = welch(noise_samples, fs, nperseg=N, window='hann', scaling='density')
 
-        print(f_axis[1], "Hz")
+
+
+        print(f_axis[0], psd_estimate[0], "Hz")
+        print(f_axis[1], psd_estimate[1], "Hz")
+
+
         
         # Plotting
-        plt.loglog(f_axis, psd_estimate, label=label, color=col, alpha=0.7)
+        plt.loglog(f_axis[1:], psd_estimate[1:], label=label, color=col, alpha=0.7)
 
     # Add theoretical lines
     f_theory = np.logspace(7, 11, 100)
