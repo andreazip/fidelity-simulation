@@ -4,6 +4,7 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import differential_evolution
 from pathlib import Path
 import re
+from matplotlib.ticker import FormatStrFormatter
 
 # ----------------------------------------
 # Fidelity functions
@@ -16,7 +17,6 @@ def save_figure(title, folder="figures", ext="png"):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
 
-    plt.title(title)
     plt.savefig(folder / title_to_filename(title, ext),
                 dpi=300, bbox_inches="tight")
 
@@ -29,14 +29,48 @@ SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Y
 floor_value = 1e-6
 
 PPT_STYLE = {
-    "font.size": 20,
-    "axes.titlesize": 24,
-    "axes.labelsize": 18,
-    "xtick.labelsize": 20,
-    "ytick.labelsize": 20,
-    "legend.fontsize": 15,
-    "figure.figsize": (16, 9),  # 16:9 in inches
-    "lines.linewidth": 2.5
+    # Font sizes
+    "font.size": 11,
+    "axes.titlesize": 14,
+    "axes.labelsize": 12,
+    "xtick.labelsize": 10,
+    "ytick.labelsize": 10,
+    "legend.fontsize": 10,
+    "figure.figsize": (10, 6),
+
+    # Line and marker styles
+    "lines.linewidth": 2.6,
+    "lines.markersize": 4,
+    "lines.markeredgewidth": 1.0,
+
+    # Grid
+    "grid.alpha": 0.6,
+    "grid.color": "#b7b7b7",
+    "grid.linestyle": "--",
+    "grid.linewidth": 1.2,
+
+    # Figure
+    "figure.dpi": 100,
+    "savefig.dpi": 300,
+    "savefig.bbox": "tight",
+    "savefig.pad_inches": 0.05,
+
+    # Axes
+    "axes.linewidth": 1.6,
+    "axes.edgecolor": "black",
+    "axes.facecolor": "white",
+    "xtick.major.width": 1.4,
+    "xtick.minor.width": 1.0,
+    "ytick.major.width": 1.4,
+    "ytick.minor.width": 1.0,
+    "xtick.direction": "in",
+    "ytick.direction": "in",
+
+    # Legend
+    "legend.frameon": True,
+    "legend.framealpha": 0.96,
+    "legend.edgecolor": "black",
+    "legend.fancybox": False,
 }
 
 plt.rcParams.update(PPT_STYLE)
@@ -131,6 +165,115 @@ def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"
     plt.ylabel(ylabel)
     plt.title(title)
     save_figure(rf"{title}", SAVE_DIR)
+
+
+def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
+    """Plot xz, nz, xx in one figure with a shared colorbar."""
+    eps_ranges = {
+        "xz": (-7e-3, 7e-3),
+        "nz": (-6e-3, 6e-3),
+        "xx": (-5e-3, 5e-3),
+    }
+    cases = [
+        ("$1-F_{x,z}$", F_x_z, eps_ranges["xz"]),
+        ("$1-F_{n,z}$", F_n_z, eps_ranges["nz"]),
+        ("$1-F_{x,x}$", F_x_x, eps_ranges["xx"]),
+    ]
+
+    inf_maps = []
+    grids = []
+    for _, func, eps_range in cases:
+        E1, E2, _, Z = compute_grid(func, eps1_range=eps_range, eps2_range=eps_range)
+        inf = np.clip(1 - Z[:, :, 0], 1e-15, None)
+        inf_maps.append(np.log10(inf))
+        grids.append((E1[:, :, 0], E2[:, :, 0]))
+
+    vmin = min(np.min(m) for m in inf_maps)
+    vmax = max(np.max(m) for m in inf_maps)
+
+    fig, axes = plt.subplots(1, 3, figsize=(11, 4.6))
+    im = None
+    for ax, (name, _, _), m, (E1, E2) in zip(axes, cases, inf_maps, grids):
+        im = ax.imshow(
+            m,
+            extent=[E1.min(), E1.max(), E2.min(), E2.max()],
+            origin="lower",
+            cmap="viridis",
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax.set_title(name)
+        ax.set_xlabel("ε1", labelpad=0.2)
+        ax.set_ylabel("ε2", labelpad=0.2)
+        # 2. Set 3 points for the X-axis (E1)
+        ax.set_xticks(np.linspace(E1.min(), E1.max(), 3))
+        ax.tick_params(axis='x', which='major', pad=10)
+        # 3. Set 5 points for the Y-axis (E3)
+        ax.set_yticks(np.linspace(E2.min(), E2.max(), 5))
+        # 2. Format to show exactly 3 decimal places
+        # '%.3f' means "floating point with 3 digits after the dot"
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+
+    fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.32)
+    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label="log10(1 - F)")
+    save_figure("Infidelity Heatmaps xz nz xx", save_dir)
+
+
+def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
+    """Plot znz, nzn, zzz in one figure using fixed epsilon2."""
+    theta2 = np.arctan(np.sqrt(8))
+    eps1_range = eps2_range = (-4.1e-3, 4.1e-3)
+    eps2_fixed = 4.1e-3
+
+    eps1 = np.linspace(*eps1_range, 180)
+    eps3 = np.linspace(*eps2_range, 180)
+    E1, E3 = np.meshgrid(eps1, eps3)
+
+    inf_znz = np.log10(np.clip(1 - F(theta2, E1, eps2_fixed, E3), 1e-15, None))
+    inf_nzn = np.log10(np.clip(1 - F_nzn(theta2, E1, eps2_fixed, E3), 1e-15, None))
+    inf_zzz = np.log10(np.clip(1 - F_x_x_x(E1, eps2_fixed, E3), 1e-15, None))
+
+    inf_maps = [inf_znz, inf_nzn, inf_zzz]
+    titles = [
+        "$1-F_{znz}$",
+        "$1-F_{nzn}$",
+        "$1-F_{zzz}$",
+    ]
+    vmin = min(np.min(m) for m in inf_maps)
+    vmax = max(np.max(m) for m in inf_maps)
+
+    fig, axes = plt.subplots(1, 3, figsize=(11, 4.6))
+    im = None
+    for ax, m, title in zip(axes, inf_maps, titles):
+        im = ax.imshow(
+            m,
+            extent=[E1.min(), E1.max(), E3.min(), E3.max()],
+            origin="lower",
+            cmap="viridis",
+            aspect="auto",
+            vmin=vmin,
+            vmax=vmax,
+        )
+        ax.set_title(title)
+        ax.set_xlabel("ε1", labelpad=0.2)
+        ax.set_ylabel("ε3", labelpad=0.2)
+        # 2. Set 3 points for the X-axis (E1)
+        ax.set_xticks(np.linspace(E1.min(), E1.max(), 3))
+        ax.tick_params(axis='x', which='major', pad=10)
+        # 3. Set 5 points for the Y-axis (E3)
+        ax.set_yticks(np.linspace(E3.min(), E3.max(), 5))
+
+        # 2. Format to show exactly 3 decimal places
+        # '%.3f' means "floating point with 3 digits after the dot"
+        ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+        ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+
+    fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.3)
+    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label="log10(1 - F)")
+
+    save_figure("Infidelity Heatmaps znz nzn zzz", save_dir)
     
 # ----------------------------------------
 # Heatmap plotting for different
@@ -139,7 +282,7 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
     fig, axes = plt.subplots(
     1,
     len(theta_list),
-    figsize=(16 * len(theta_list) / 3, 9)
+    figsize=(12 * len(theta_list) / 3, 6)
 )
 
     for ax, theta2 in zip(axes, theta_list):
@@ -396,26 +539,8 @@ def find_minimal_error_threshold(theta2, target_infidelity=1e-4, e_max=1):
     return high, F_min, params
 
 def main():
-    # # #xz rotation
-    compute_x_z()
-
-    # # #nz rotation        
-    compute_n_z()
-
-    # # ##zz rotation
-    compute_x_x() #xx same as zz
-    # # plt.show()
-
-    # #znz rotation
-    compute_z_n_z_fixed2() #fixing epsilon 2
-    compute_z_n_z_fixed3() #fixing epsilon 3
-
-    # #nzn rotation
-    compute_n_z_n_fixed2() #fixing epsilon 2
-    compute_n_z_n_fixed3() #fixing epsilon 3
-
-    # #zzz rotation
-    compute_z_z_z_fixed3() #centered where the argument of cos is 0
+    plot_group_xz_nz_xx()
+    plot_group_znz_nzn_zzz()
 
 
     # understand evoution with theta

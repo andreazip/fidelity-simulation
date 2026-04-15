@@ -12,6 +12,18 @@ def exp_func(alpha, Joffset, V):
 def func_10 (alpha, Joffset, V):
     return 10**(2*alpha*V)*Joffset
 
+
+def required_voltage_for_target_exp(alpha, joffset_hz, target_hz):
+    if alpha == 0 or joffset_hz <= 0 or target_hz <= 0:
+        return np.nan
+    return np.log(target_hz / joffset_hz) / (2.0 * alpha)
+
+
+def required_voltage_for_target_10(alpha, joffset_hz, target_hz):
+    if alpha == 0 or joffset_hz <= 0 or target_hz <= 0:
+        return np.nan
+    return np.log10(target_hz / joffset_hz) / (2.0 * alpha)
+
 # Publication-style plotting setup
 plt.rcParams.update({
     "figure.dpi": 150,
@@ -51,6 +63,8 @@ FIT_BOUNDS = {
 
 # Choose which modes to run. Default runs both without and with boundary (1-10 kHz).
 RUN_MODES = ["unbounded", "bounded_1_10kHz", "bounded_1_100kHz"]
+
+all_modes_summary = {}
 
 for mode in RUN_MODES:
     bounds = FIT_BOUNDS[mode]
@@ -187,6 +201,8 @@ for mode in RUN_MODES:
     with open(summary_file, "w", encoding="utf-8") as f:
         json.dump(fit_summary, f, indent=2)
 
+    all_modes_summary[mode] = fit_summary
+
     alpha_exp_vals = np.array([fit_summary[p]["alpha_exp"] for p in PANEL_FILES])
     alpha_10_vals = np.array([fit_summary[p]["alpha_10"] for p in PANEL_FILES])
     J0_exp_vals = np.array([fit_summary[p]["Joffset_exp_Hz"] for p in PANEL_FILES])
@@ -199,3 +215,183 @@ for mode in RUN_MODES:
     print(f"10^x interpolation alpha range: [{alpha_10_vals.min():.6f}, {alpha_10_vals.max():.6f}]")
     print(f"10^x interpolation Joffset range: [{J0_10_vals.min()/1e3:.6e}, {J0_10_vals.max()/1e3:.6e}] kHz")
     print(f"Saved figures and summary to: {mode_dir}\n")
+
+# Cross-mode comparison: alpha (x-axis) vs Joffset (y-axis), all panels together.
+comparison_dir = OUT_DIR / "alpha_vs_joffset_comparison"
+comparison_dir.mkdir(parents=True, exist_ok=True)
+
+mode_labels = {
+    "unbounded": "unbounded",
+    "bounded_1_10kHz": "10 kHz bound",
+    "bounded_1_100kHz": "100 kHz bound",
+}
+mode_colors = {
+    "unbounded": "#1f77b4",
+    "bounded_1_10kHz": "#2ca02c",
+    "bounded_1_100kHz": "#d62728",
+}
+mode_markers = {
+    "unbounded": "o",
+    "bounded_1_10kHz": "s",
+    "bounded_1_100kHz": "^",
+}
+
+panel_order = list(PANEL_FILES.keys())
+target_j_hz_all = 100e6
+v_all_min_mv = 180.0
+v_all_max_mv = 280.0
+
+# Figure 1: exp fit parameters, lines connect setup points for each panel.
+fig_exp, ax_exp = plt.subplots(figsize=(7.0, 5.2), constrained_layout=True)
+panel_palette = plt.cm.tab10(np.linspace(0, 1, len(panel_order)))
+
+all_alpha_exp = np.array([all_modes_summary[m][p]["alpha_exp"] for p in panel_order for m in RUN_MODES], dtype=float)
+all_j0_exp_khz = np.array([all_modes_summary[m][p]["Joffset_exp_Hz"] for p in panel_order for m in RUN_MODES], dtype=float) / 1e3
+
+alpha_grid_exp = np.linspace(0.9 * np.min(all_alpha_exp), 1.1 * np.max(all_alpha_exp), 280)
+j0_grid_exp_khz = np.logspace(np.log10(0.7 * np.min(all_j0_exp_khz)), np.log10(1.3 * np.max(all_j0_exp_khz)), 280)
+A_exp, J0_exp_kHz = np.meshgrid(alpha_grid_exp, j0_grid_exp_khz)
+v_req_exp_mv_bg = 1e3 * np.log(target_j_hz_all / (J0_exp_kHz * 1e3)) / (2.0 * A_exp)
+
+hm_exp = ax_exp.pcolormesh(A_exp, J0_exp_kHz, v_req_exp_mv_bg, shading="auto", cmap="viridis", alpha=0.95)
+cont_exp = ax_exp.contour(
+    A_exp,
+    J0_exp_kHz,
+    v_req_exp_mv_bg,
+    levels=[v_all_min_mv, v_all_max_mv],
+    colors=["white", "black"],
+    linestyles=["--", "-."],
+    linewidths=1.6,
+)
+ax_exp.clabel(cont_exp, fmt={v_all_min_mv: "180 mV", v_all_max_mv: "280 mV"}, inline=True, fontsize=8)
+
+for panel, color in zip(panel_order, panel_palette):
+    x_alpha = np.array([all_modes_summary[m][panel]["alpha_exp"] for m in RUN_MODES])
+    y_j0_khz = np.array([all_modes_summary[m][panel]["Joffset_exp_Hz"] for m in RUN_MODES]) / 1e3
+    ax_exp.plot(x_alpha, y_j0_khz, "-", color=color, linewidth=2.0, label=f"Panel {panel}")
+
+    for mode, x, y in zip(RUN_MODES, x_alpha, y_j0_khz):
+        ax_exp.scatter(
+            x,
+            y,
+            s=70,
+            marker=mode_markers[mode],
+            facecolor="white",
+            edgecolor=color,
+            linewidth=1.5,
+            zorder=3,
+        )
+
+ax_exp.set_yscale("log")
+ax_exp.set_xlabel("alpha")
+ax_exp.set_ylabel("Joffset (kHz)")
+ax_exp.set_title("All panels together: exp fit with V(100 MHz) heatmap")
+panel_legend = ax_exp.legend(
+    frameon=True,
+    facecolor="white",
+    edgecolor="black",
+    framealpha=1.0,
+    ncol=2,
+    loc="upper right",
+    title="Panels",
+)
+ax_exp.add_artist(panel_legend)
+
+mode_handles = [
+    plt.Line2D(
+        [0],
+        [0],
+        marker=mode_markers[m],
+        color="black",
+        linestyle="None",
+        markersize=7,
+        markerfacecolor="white",
+        label=mode_labels[m],
+    )
+    for m in RUN_MODES
+]
+ax_exp.legend(
+    handles=mode_handles,
+    frameon=True,
+    facecolor="white",
+    edgecolor="black",
+    framealpha=1.0,
+    loc="lower left",
+    title="Setups",
+)
+cbar_exp = fig_exp.colorbar(hm_exp, ax=ax_exp)
+cbar_exp.set_label("Required barrier voltage for J=100 MHz (mV)")
+out_exp = comparison_dir / "all_panels_alpha_vs_joffset_exp_modes.png"
+fig_exp.savefig(out_exp, bbox_inches="tight")
+plt.close(fig_exp)
+
+# Figure 2: 10^x fit parameters, lines connect setup points for each panel.
+fig_10, ax_10 = plt.subplots(figsize=(7.0, 5.2), constrained_layout=True)
+
+all_alpha_10 = np.array([all_modes_summary[m][p]["alpha_10"] for p in panel_order for m in RUN_MODES], dtype=float)
+all_j0_10_khz = np.array([all_modes_summary[m][p]["Joffset_10_Hz"] for p in panel_order for m in RUN_MODES], dtype=float) / 1e3
+
+alpha_grid_10 = np.linspace(0.9 * np.min(all_alpha_10), 1.1 * np.max(all_alpha_10), 280)
+j0_grid_10_khz = np.logspace(np.log10(0.7 * np.min(all_j0_10_khz)), np.log10(1.3 * np.max(all_j0_10_khz)), 280)
+A_10, J0_10_kHz = np.meshgrid(alpha_grid_10, j0_grid_10_khz)
+v_req_10_mv_bg = 1e3 * np.log10(target_j_hz_all / (J0_10_kHz * 1e3)) / (2.0 * A_10)
+
+hm_10 = ax_10.pcolormesh(A_10, J0_10_kHz, v_req_10_mv_bg, shading="auto", cmap="viridis", alpha=0.95)
+cont_10 = ax_10.contour(
+    A_10,
+    J0_10_kHz,
+    v_req_10_mv_bg,
+    levels=[v_all_min_mv, v_all_max_mv],
+    colors=["white", "black"],
+    linestyles=["--", "-."],
+    linewidths=1.6,
+)
+ax_10.clabel(cont_10, fmt={v_all_min_mv: "180 mV", v_all_max_mv: "280 mV"}, inline=True, fontsize=8)
+
+for panel, color in zip(panel_order, panel_palette):
+    x_alpha = np.array([all_modes_summary[m][panel]["alpha_10"] for m in RUN_MODES])
+    y_j0_khz = np.array([all_modes_summary[m][panel]["Joffset_10_Hz"] for m in RUN_MODES]) / 1e3
+    ax_10.plot(x_alpha, y_j0_khz, "-", color=color, linewidth=2.0, label=f"Panel {panel}")
+
+    for mode, x, y in zip(RUN_MODES, x_alpha, y_j0_khz):
+        ax_10.scatter(
+            x,
+            y,
+            s=70,
+            marker=mode_markers[mode],
+            facecolor="white",
+            edgecolor=color,
+            linewidth=1.5,
+            zorder=3,
+        )
+
+ax_10.set_yscale("log")
+ax_10.set_xlabel("alpha")
+ax_10.set_ylabel("Joffset (kHz)")
+ax_10.set_title("All panels together: 10^x fit with V(100 MHz) heatmap")
+panel_legend = ax_10.legend(
+    frameon=True,
+    facecolor="white",
+    edgecolor="black",
+    framealpha=1.0,
+    ncol=2,
+    loc="upper right",
+    title="Panels",
+)
+ax_10.add_artist(panel_legend)
+ax_10.legend(
+    handles=mode_handles,
+    frameon=True,
+    facecolor="white",
+    edgecolor="black",
+    framealpha=1.0,
+    loc="lower left",
+    title="Setups",
+)
+cbar_10 = fig_10.colorbar(hm_10, ax=ax_10)
+cbar_10.set_label("Required barrier voltage for J=100 MHz (mV)")
+out_10 = comparison_dir / "all_panels_alpha_vs_joffset_10x_modes.png"
+fig_10.savefig(out_10, bbox_inches="tight")
+plt.close(fig_10)
+
+print(f"Saved combined all-panels alpha-vs-Joffset line plots to: {comparison_dir}")

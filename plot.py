@@ -152,6 +152,7 @@ def plot_infidelity_vs_noise(
 
     f_cutoff = J*2*np.pi/theta_min
 
+
     # ================= LOAD DATA =================
     data = np.load(data_file, allow_pickle=True)
     pulse_types = data["pulse_types"]
@@ -210,13 +211,42 @@ def plot_infidelity_vs_noise(
                 inf_pink = {pulse: np.clip(data["infidelity_pink_qpt"].item()[pulse], floor_value, None) for pulse in pulse_types}
                 std_pink = {pulse: np.abs(data["infidelity_pink_std_qpt"].item()[pulse]) for pulse in pulse_types}
 
-        #analuytical caluclation
-        theta_avg = np.mean(theta)
+        #analytical caluclation
+        theta_avg = np.max(theta)
 
+        inF_first = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*N0_array*f_cutoff
 
-        inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*N0_array*f_cutoff
+        # Assuming alpha, theta, and theta[1] are already defined
+        # N0_array and f_cutoff are also assumed to be defined
 
+        # 1. Calculate sigma_v for the entire array
+        sigma_v_array = np.sqrt(N0_array * f_cutoff)
 
+        # 2. Setup Dimensions
+        n_samples = 1_000_000  # Reduced slightly for memory safety during vectorization
+        # Create a 2D Gaussian noise matrix: (len(N0_array), n_samples)
+        # We multiply the standard normal by the column vector of sigma_theta
+        sigma_theta_vec =theta_avg *(np.exp(2*alpha * sigma_v_array)-1)[:, np.newaxis]
+        dt = np.random.standard_normal((len(N0_array), n_samples)) * sigma_theta_vec
+
+        # 3. Apply the COMPLETE fidelity definition (Vectorized)
+        # All operations (cos, sin, **) work element-wise on the 2D array 'dt'
+        term1 = np.cos(dt/2)**3
+
+        # Use theta[1] as the phase parameter theta2 from your image
+        term2 = (np.sin(dt/2)**2 / 4.0) * (3 * np.cos(theta[1] - dt) + np.cos(dt))
+
+        # eps1=eps3=dt, eps2=-dt -> sin(e_tot)/2 * sin(e2) -> sin(dt)/2 * sin(-dt)
+        term3 = -0.5 * np.sin(dt/2)**2
+
+        fidelity = (term1 - term2 + term3)**2
+        infidelity = 1 - fidelity
+
+        # 4. Calculate Standard Deviation across the samples (axis=1)
+        # This results in an array 'inF' with the same length as N0_array
+        inF = np.std(infidelity, axis=1)
+
+    
         # ================= WHITE NOISE PLOT =================
         if (inf_white is not None) and (N0_array.size > 0):
             for pulse in pulse_types:
@@ -248,6 +278,15 @@ def plot_infidelity_vs_noise(
                     color="black",
                     label="Ideal infidelity",
                 )
+            
+            plt.plot(
+                    N0_array,
+                    inF_first,
+                    marker="o",
+                    linestyle="-.",
+                    color="black",
+                    label="Ideal infidelity, first-order",
+                )
 
             plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
             plt.yscale("log")
@@ -263,7 +302,37 @@ def plot_infidelity_vs_noise(
             save_figure(f"white_noise_{titles[metric]}", save_dir)
             _maybe_show()
 
-        inF = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
+        inF_first = (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*np.sqrt(2)*S1Hz_array*np.log(f_cutoff/(fs/N))
+
+        # Assuming alpha, theta, and theta[1] are already defined
+        # N0_array and f_cutoff are also assumed to be defined
+
+        # 1. Calculate sigma_v for the entire array
+        sigma_v_array = np.sqrt(S1Hz_array*np.log(f_cutoff/(fs/N)))
+
+        # 2. Setup Dimensions
+        n_samples = 1_000_000  # Reduced slightly for memory safety during vectorization
+        # Create a 2D Gaussian noise matrix: (len(S1Hz_array), n_samples)
+        # We multiply the standard normal by the column vector of sigma_theta
+        sigma_theta_vec =theta_avg *(np.exp(2*alpha * sigma_v_array)-1)[:, np.newaxis]
+        dt = np.random.standard_normal((len(S1Hz_array), n_samples)) * sigma_theta_vec
+
+        # 3. Apply the COMPLETE fidelity definition (Vectorized)
+        # All operations (cos, sin, **) work element-wise on the 2D array 'dt'
+        term1 = np.cos(dt/2)**3
+
+        # Use theta[1] as the phase parameter theta2 from your image
+        term2 = (np.sin(dt/2)**2 / 4.0) * (3 * np.cos(theta[1] - dt) + np.cos(dt))
+
+        # eps1=eps3=dt, eps2=-dt -> sin(e_tot)/2 * sin(e2) -> sin(dt)/2 * sin(-dt)
+        term3 = -0.5 * np.sin(dt/2)**2
+
+        fidelity = (term1 - term2 + term3)**2
+        infidelity = 1 - fidelity
+
+        # 4. Calculate Standard Deviation across the samples (axis=1)
+        # This results in an array 'inF' with the same length as S1Hz_array
+        inF = np.std(infidelity, axis=1)
 
         # ================= PINK NOISE PLOT =================
         if (inf_pink is not None) and (S1Hz_array.size > 0):
@@ -294,6 +363,15 @@ def plot_infidelity_vs_noise(
                     linestyle="--",
                     color="black",
                     label="Ideal infidelity",
+                )
+            
+            plt.plot(
+                    S1Hz_array,
+                    inF_first,
+                    marker="o",
+                    linestyle="-.",
+                    color="black",
+                    label="Ideal infidelity, first-order",
                 )
             plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
             plt.yscale("log")

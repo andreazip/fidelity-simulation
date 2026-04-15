@@ -31,10 +31,10 @@ RUN = {
     "heatmaps": False,
     "heatmaps_all": False,
     "jitter": False,
-    "white_noise": False,     # run white-only
-    "pink_noise": False,      # run pink-only
-    "noise": False,           # combined plots
-    "table": True,           # build summary specs table
+    "white_noise": True,     # run white-only
+    "pink_noise": True,      # run pink-only
+    "noise": True,           # combined plots
+    "table": False,           # build summary specs table
 }
 if RUN_ALL:
     for k in RUN:
@@ -51,14 +51,18 @@ Edit `GATES` and `J_VALUES` to sweep multiple gates and J easily.
 `alpha_list` and `Joffset_list` are kept for noise/jitter sweeps.
 """
 # Physics base
-J_offset = 1e3
+J_offset = 10e3
 alpha = 25.0
 
 # Sweep sets
-GATES = ["X"]            # e.g., ["X", "Y", "SXH"]
+GATES = ["X", "Y", "SXH"]            # e.g., ["X", "Y", "SXH"]
 J_VALUES = [200e6, 100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
+# t_rise = 1e-9
+# t_fall = 1e-9
+# #previous run for all the other was 0.5e-9 and 0.05e-9
+# tau = 0.1e-9
 t_rise = 0.5e-9
 t_fall = 0.5e-9
 tau = 0.05e-9
@@ -86,7 +90,7 @@ delta_V_range = 0.4e-3
 # delta_t_range = 80e-12
 # delta_V_range = 0.05e-3
 
-N_space = 25
+N_space = 50
 
 # Parallel workers for inner Monte Carlo (None or integer >1)
 N_JOBS = 8  # e.g., use os.cpu_count()-1 for max cores
