@@ -372,7 +372,8 @@ def run_test_gates_heatmaps(
     Automatically skips gates already simulated.
     """
 
-    test_root = BASE_DIR / "test_gates"
+    test_root = BASE_DIR / f"test_gates_{cfg_base.alpha}"
+    print(test_root)
     test_root.mkdir(exist_ok=True)
 
     V = EO.V(alpha=cfg_base.alpha, J0=cfg_base.J_offset, J=cfg_base.J) #[V]
@@ -705,7 +706,7 @@ def run_jitter(cfg, dirs, sigma_jitters, iterations=50, n_jobs=None):
         iterations=iterations,
         output_file=file,
         compute_state=False,
-        compute_operator=False,
+        compute_operator=True,
         compute_qpt=True,
         n_jobs=n_jobs,
     )
@@ -736,7 +737,7 @@ def run_noise(cfg, dirs, N0_whites, K_flickers, iterations=50, n_jobs=None):
         iterations=iterations,
         output_file=file,
         compute_state=False,
-        compute_operator=False,
+        compute_operator=True,
         compute_qpt=True,
         n_jobs=n_jobs,
     )
@@ -767,7 +768,7 @@ def run_white_noise_only(cfg, dirs, N0_whites, iterations=50, n_jobs=None):
         iterations=iterations,
         output_file=file,
         compute_state=False,
-        compute_operator=False,
+        compute_operator=True,
         compute_qpt=True,
         n_jobs=n_jobs,
     )
@@ -797,7 +798,7 @@ def run_pink_noise_only(cfg, dirs, K_flickers, iterations=50, n_jobs=None):
         iterations=iterations,
         output_file=file,
         compute_state=False,
-        compute_operator=False,
+        compute_operator=True,
         compute_qpt=True,
         n_jobs=n_jobs,
     )

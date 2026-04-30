@@ -29,11 +29,11 @@ RUN = {
     "single_shot_check": False,  # one quick fidelity+plot sanity check and exit
     "fidelities": False,
     "heatmaps": False,
-    "heatmaps_all": False,
+    "heatmaps_all": True,
     "jitter": False,
-    "white_noise": True,     # run white-only
-    "pink_noise": True,      # run pink-only
-    "noise": True,           # combined plots
+    "white_noise": False,     # run white-only
+    "pink_noise": False,      # run pink-only
+    "noise": False,           # combined plots
     "table": False,           # build summary specs table
 }
 if RUN_ALL:
@@ -43,7 +43,7 @@ if RUN_ALL:
         else:
             RUN[k] = True
 
-PLOT_ONLY = False
+PLOT_ONLY = True
 
 """
 Batch controls
@@ -51,24 +51,27 @@ Edit `GATES` and `J_VALUES` to sweep multiple gates and J easily.
 `alpha_list` and `Joffset_list` are kept for noise/jitter sweeps.
 """
 # Physics base
-J_offset = 10e3
-alpha = 25.0
+J_offset = 100e3
+alpha = 12.5
 
 # Sweep sets
 GATES = ["X", "Y", "SXH"]            # e.g., ["X", "Y", "SXH"]
-J_VALUES = [200e6, 100e6]                 # e.g., [10e6, 20e6]
+J_VALUES = [100e6,200e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
-# t_rise = 1e-9
-# t_fall = 1e-9
-# #previous run for all the other was 0.5e-9 and 0.05e-9
-# tau = 0.1e-9
-t_rise = 0.5e-9
-t_fall = 0.5e-9
-tau = 0.05e-9
+t_rise = 1e-9
+t_fall = 1e-9
+#previous run for all the other was 0.5e-9 and 0.05e-9
+tau = 0.1e-9
+
+# Uncomment part above for heatmaps_all, and set indifidelity target to 10**-6
+
+# t_rise = 0.5e-9
+# t_fall = 0.5e-9
+# tau = 0.05e-9
 
 #set infidelity resolution needed:
-target_infidelity= 10**(-5.5)  # target time resolution in ps to capture infidelity features; adjust as needed
+target_infidelity= 10**(-6)  # target time resolution in ps to capture infidelity features; adjust as needed
 target_infidelity_jitter= 10**(-6)  # target time resolution in ps to capture infidelity features; adjust as needed
                 
 DT_ps = np.sqrt(target_infidelity/7/np.sqrt(2))/np.pi*1e12 #time in ps, multiplied by J
@@ -96,7 +99,7 @@ N_space = 50
 N_JOBS = 8  # e.g., use os.cpu_count()-1 for max cores
 
 # Base directory
-BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\Second Year\MEP\Results_new')
+BASE_DIR = Path(r'C:\Users\zipar\OneDrive - Delft University of Technology\MEP\Results_new')
 
 
 def _next_versioned_results_dir(base_dir: Path) -> Path:
@@ -106,7 +109,7 @@ def _next_versioned_results_dir(base_dir: Path) -> Path:
     The new directory is created and returned.
     """
     parent = base_dir.parent
-    n = 2
+    n = 1
     while True:
         candidate = parent / f"Results_v{n}"
         if not candidate.exists():
@@ -411,7 +414,7 @@ def main():
             # Physical noise sweeps from analytical infidelity threshold (1e-4).
             def _noise_arrays_for_alpha(alpha_val: float | int):
                 alpha_v = float(alpha_val)
-                target_infidelity = 1e-4
+                target_infidelity = 1.5e-4
 
                 theta = np.zeros(3)
                 theta[0] = theta1 if theta1 != 0 else theta2
@@ -425,13 +428,13 @@ def main():
                 f_cutoff = J * 2 * np.pi / theta_min
                 log_term = np.log(f_cutoff / (fs_local / N))
 
-                coeff = (4 + 3 * np.cos(theta[1] / 2) ** 2) * (alpha_v * theta_avg) ** 2 * np.sqrt(2)
+                coeff = (4 + 3 * np.cos(theta[1] / 2) ** 2) * (alpha_v * theta_avg) ** 2
 
                 n0_thr = target_infidelity / (coeff * f_cutoff)
                 k_thr = target_infidelity / (coeff * log_term)
 
                 # Sweep from threshold to 2x threshold (e.g. 5e-7 -> 10e-7 style).
-                n0_arr = np.linspace(0, 2.0 * n0_thr, N_noise)
+                n0_arr = np.linspace(0, 1.2 * n0_thr, N_noise)
                 n0_arr = n0_arr[1:]
                 k_arr = np.linspace(0, 4.0 * k_thr, N_noise)
                 k_arr = k_arr[1:]
@@ -784,7 +787,7 @@ def main():
                 if should_stop():
                     status(f"[STATE{state_counter}] Stop before plotting gate thresholds for J={J/1e6:.0f}MHz")
                     return
-                plot.plot_gate_thresholds_from_heatmaps(base_dir, J)
+                plot.plot_gate_thresholds_from_heatmaps(base_dir, J, alpha=alpha)
                 status(f"[STATE{state_counter}] Completed test_gates heatmaps")
                 state_counter += 1
             else:
@@ -792,14 +795,14 @@ def main():
                 if should_stop():
                     status(f"[STATE{state_counter}] Stop before plot-only gate thresholds for J={J/1e6:.0f}MHz")
                     return
-                plot.plot_gate_thresholds_from_heatmaps(base_dir, J)
+                plot.plot_gate_thresholds_from_heatmaps(base_dir, J, alpha= alpha)
                 status(f"[STATE{state_counter}] Completed plot-only thresholds for J={J/1e6:.0f}MHz")
                 state_counter += 1
             
             if should_stop():
                 status(f"[STATE{state_counter}] Stop before RC thresholds across J")
                 return
-            plot.plot_rc_thresholds_across_J(base_dir, J_VALUES)
+            plot.plot_rc_thresholds_across_J(base_dir, J_VALUES, alpha = alpha)
 
     # -------- Specs table --------
     if RUN.get("table"):

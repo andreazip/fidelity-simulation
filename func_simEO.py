@@ -986,8 +986,9 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
 
                 if compute_operator:
                     fidelities = np.array(fidelities)
-                    infidelity_white[pulse].append(1 - np.mean(fidelities))
-                    infidelity_white_std[pulse].append(np.std(1 - fidelities))
+                    fid_avg = 2/3 *np.mean(fidelities) + 1/3 #convert from average state fidelity to process fidelity
+                    infidelity_white[pulse].append(1 - fid_avg)
+                    infidelity_white_std[pulse].append(2/3*np.std(fidelities)) #propagate std to process infidelity
 
                 if compute_qpt:
                     fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
@@ -1036,8 +1037,9 @@ def simulate_infidelity_vs_noise(alpha, J_offset, V, T, N, theta1, theta2, theta
 
                 if compute_operator:
                     fidelities = np.array(fidelities)
-                    infidelity_pink[pulse].append(1 - np.mean(fidelities))
-                    infidelity_pink_std[pulse].append(np.std(1 - fidelities))
+                    fid_avg = 2/3 *np.mean(fidelities) + 1/3 #convert from average state fidelity to process fidelity
+                    infidelity_pink[pulse].append(1 - fid_avg)
+                    infidelity_pink_std[pulse].append(2/3*np.std(fidelities)) #propagate std to process infidelity
 
                 if compute_qpt:
                     fid_qpt = fidelity_QPT(S_accum, U_ideal_T)
@@ -1225,8 +1227,9 @@ def simulate_infidelity_jitter(theta1, theta2, theta3, theta4, t_rise, t_fall, t
 
                 if compute_operator:
                     fidelities = np.array(fidelities)
-                    infidelity_jitter[pulse].append(1 - np.mean(fidelities))
-                    infidelity_jitter_std[pulse].append(np.std(1 - fidelities))
+                    fid_avg = 2/3 *np.mean(fidelities) + 1/3 #convert from average state fidelity to process fidelity
+                    infidelity_jitter[pulse].append(1 - fid_avg)
+                    infidelity_jitter_std[pulse].append(2/3*np.std(fidelities)) #propagate std to process infidelity
 
                 if compute_qpt:
                     fid_QPT = fidelity_QPT(S_accum, U_ideal_T)

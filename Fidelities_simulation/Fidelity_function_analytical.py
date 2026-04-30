@@ -3,8 +3,69 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.optimize import differential_evolution
 from pathlib import Path
+from functools import wraps
 import re
 from matplotlib.ticker import FormatStrFormatter
+
+HAS_SCIENCEPLOTS = False
+SCIENCE_STYLE = ["science", "std-colors", "no-latex"]
+SCIENCE_STYLE_OVERRIDES = {
+    "text.usetex": True,
+    "figure.figsize": (3.3, 2.5),
+    "font.size": 8,
+    "axes.labelsize": 10,
+    "axes.titlesize": 9,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "legend.fontsize": 6,
+    "legend.title_fontsize": 8,
+}
+SHOW_FIGURE_TITLES = False
+try:
+    import scienceplots  # noqa: F401
+    HAS_SCIENCEPLOTS = True
+    plt.rcdefaults()
+    plt.style.use(SCIENCE_STYLE)
+except ImportError:
+    HAS_SCIENCEPLOTS = False
+
+
+def with_science_style(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if HAS_SCIENCEPLOTS:
+            with plt.style.context(SCIENCE_STYLE):
+                with plt.rc_context(SCIENCE_STYLE_OVERRIDES):
+                    return func(*args, **kwargs)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def _maybe_title(target, text):
+    if SHOW_FIGURE_TITLES and _has_multiple_plot_axes(target.figure):
+        target.set_title(text)
+
+
+def _maybe_plt_title(text):
+    if SHOW_FIGURE_TITLES and _has_multiple_plot_axes(plt.gcf()):
+        plt.title(text)
+
+
+def _has_multiple_plot_axes(fig):
+    plot_axes = [ax for ax in fig.axes if ax.get_label() != "<colorbar>"]
+    return len(plot_axes) > 1
+
+
+def _multi_panel_figsize(nrows, ncols):
+    base_w, base_h = plt.rcParams.get("figure.figsize", (6.4, 4.8))
+    width_scale = max(1, ncols)
+    height_scale = max(1, nrows)
+    if ncols == 2:
+        height_scale *= 1.5  # slightly reduce height for 2-column layouts:
+    elif ncols >= 3:
+        height_scale *= 1.7  # more reduction for 3+ columns
+    return base_w * width_scale, base_h * height_scale
 
 # ----------------------------------------
 # Fidelity functions
@@ -28,52 +89,53 @@ SAVE_DIR_1 = r"C:\Users\zipar\OneDrive - Delft University of Technology\Second Y
 
 floor_value = 1e-6
 
-PPT_STYLE = {
-    # Font sizes
-    "font.size": 11,
-    "axes.titlesize": 14,
-    "axes.labelsize": 12,
-    "xtick.labelsize": 10,
-    "ytick.labelsize": 10,
-    "legend.fontsize": 10,
-    "figure.figsize": (10, 6),
+if not HAS_SCIENCEPLOTS:
+    PPT_STYLE = {
+        # Font sizes
+        "font.size": 11,
+        "axes.titlesize": 14,
+        "axes.labelsize": 12,
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+        "figure.figsize": (10, 6),
 
-    # Line and marker styles
-    "lines.linewidth": 2.6,
-    "lines.markersize": 4,
-    "lines.markeredgewidth": 1.0,
+        # Line and marker styles
+        "lines.linewidth": 2.6,
+        "lines.markersize": 4,
+        "lines.markeredgewidth": 1.0,
 
-    # Grid
-    "grid.alpha": 0.6,
-    "grid.color": "#b7b7b7",
-    "grid.linestyle": "--",
-    "grid.linewidth": 1.2,
+        # Grid
+        "grid.alpha": 0.6,
+        "grid.color": "#b7b7b7",
+        "grid.linestyle": "--",
+        "grid.linewidth": 1.2,
 
-    # Figure
-    "figure.dpi": 100,
-    "savefig.dpi": 300,
-    "savefig.bbox": "tight",
-    "savefig.pad_inches": 0.05,
+        # Figure
+        "figure.dpi": 100,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "savefig.pad_inches": 0.05,
 
-    # Axes
-    "axes.linewidth": 1.6,
-    "axes.edgecolor": "black",
-    "axes.facecolor": "white",
-    "xtick.major.width": 1.4,
-    "xtick.minor.width": 1.0,
-    "ytick.major.width": 1.4,
-    "ytick.minor.width": 1.0,
-    "xtick.direction": "in",
-    "ytick.direction": "in",
+        # Axes
+        "axes.linewidth": 1.6,
+        "axes.edgecolor": "black",
+        "axes.facecolor": "white",
+        "xtick.major.width": 1.4,
+        "xtick.minor.width": 1.0,
+        "ytick.major.width": 1.4,
+        "ytick.minor.width": 1.0,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
 
-    # Legend
-    "legend.frameon": True,
-    "legend.framealpha": 0.96,
-    "legend.edgecolor": "black",
-    "legend.fancybox": False,
-}
+        # Legend
+        "legend.frameon": True,
+        "legend.framealpha": 0.96,
+        "legend.edgecolor": "black",
+        "legend.fancybox": False,
+    }
 
-plt.rcParams.update(PPT_STYLE)
+    plt.rcParams.update(PPT_STYLE)
 
 def F_n_z(epsilon1, epsilon2):
     return (np.cos(epsilon2) * np.cos(epsilon1) - 0.5 * np.sin(epsilon2) * np.sin(epsilon1))**2
@@ -133,13 +195,13 @@ def compute_grid(func, theta2=None, eps1_range=(-0.1,0.1), eps2_range=(-0.1,0.1)
 # 3D surface plotting
 # ----------------------------------------
 def plot_surface_3d(E1, E2, Z, xlabel="ε1", ylabel="ε2", zlabel="Fidelity", title="Fidelity Surface"):
-    fig = plt.figure(figsize=(8,6))
+    fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.plot_surface(E1, E2, np.log10(1-Z), cmap='viridis')
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
     ax.set_zlabel(zlabel)
-    ax.set_title(title)
+    _maybe_title(ax, title)
     plt.close()
     
 
@@ -160,10 +222,10 @@ def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"
     
     im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
                     origin='lower', cmap='viridis', aspect='auto')
-    plt.colorbar(im, label='Infidelity')
+    plt.colorbar(im, r"$\log_{{10}}(1 - F)$")
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    plt.title(title)
+    _maybe_plt_title(title)
     save_figure(rf"{title}", SAVE_DIR)
 
 
@@ -191,7 +253,7 @@ def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
     vmin = min(np.min(m) for m in inf_maps)
     vmax = max(np.max(m) for m in inf_maps)
 
-    fig, axes = plt.subplots(1, 3, figsize=(11, 4.6))
+    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3))
     im = None
     for ax, (name, _, _), m, (E1, E2) in zip(axes, cases, inf_maps, grids):
         im = ax.imshow(
@@ -203,7 +265,7 @@ def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
             vmin=vmin,
             vmax=vmax,
         )
-        ax.set_title(name)
+        _maybe_title(ax, name)
         ax.set_xlabel("ε1", labelpad=0.2)
         ax.set_ylabel("ε2", labelpad=0.2)
         # 2. Set 3 points for the X-axis (E1)
@@ -217,7 +279,7 @@ def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
         ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
     fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.32)
-    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label="log10(1 - F)")
+    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label=r"$\log_{{10}}(1 - F)$")
     save_figure("Infidelity Heatmaps xz nz xx", save_dir)
 
 
@@ -244,7 +306,7 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
     vmin = min(np.min(m) for m in inf_maps)
     vmax = max(np.max(m) for m in inf_maps)
 
-    fig, axes = plt.subplots(1, 3, figsize=(11, 4.6))
+    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3))
     im = None
     for ax, m, title in zip(axes, inf_maps, titles):
         im = ax.imshow(
@@ -256,7 +318,7 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
             vmin=vmin,
             vmax=vmax,
         )
-        ax.set_title(title)
+        _maybe_title(ax, title)
         ax.set_xlabel("ε1", labelpad=0.2)
         ax.set_ylabel("ε3", labelpad=0.2)
         # 2. Set 3 points for the X-axis (E1)
@@ -271,7 +333,7 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
         ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
     fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.3)
-    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label="log10(1 - F)")
+    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label=r"$\log_{{10}}(1 - F)$")
 
     save_figure("Infidelity Heatmaps znz nzn zzz", save_dir)
     
@@ -279,11 +341,7 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
 # Heatmap plotting for different
 # ----------------------------------------
 def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", ylabel="ε2", title="Infidelity Heatmap for different $\\theta$"):
-    fig, axes = plt.subplots(
-    1,
-    len(theta_list),
-    figsize=(12 * len(theta_list) / 3, 6)
-)
+    fig, axes = plt.subplots(1, len(theta_list), figsize=_multi_panel_figsize(1, len(theta_list)))
 
     for ax, theta2 in zip(axes, theta_list):
         Z = 1 - F(theta2, E1, E2, E3)
@@ -291,16 +349,16 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
         Z = np.clip(Z, 1e-15, None)
         if fixed_3:
             im = ax.pcolormesh(E1, E2, np.log10(Z), shading='auto')
-            ax.set_title(f"θ₂ = {theta2:.2f}")
+            _maybe_title(ax, f"θ₂ = {theta2:.2f}")
             ax.set_xlabel("ε1")
             ax.set_ylabel("ε2")
         else:
             im = ax.pcolormesh(E1, E3, np.log10(Z), shading='auto')
-            ax.set_title(f"θ₂ = {theta2:.2f}")
+            _maybe_title(ax, f"θ₂ = {theta2:.2f}")
             ax.set_xlabel("ε1")
             ax.set_ylabel("ε3")
 
-    fig.colorbar(im, ax=axes.ravel().tolist(), label="1 - F")
+    fig.colorbar(im, ax=axes.ravel().tolist(), label=r"$\log_{10}(1 - F)$")
     # Add a figure-wide title
     #fig.suptitle(title, fontsize=16)
     if fixed_3:
@@ -339,13 +397,18 @@ def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=1
     F_vals = F(THETA, EPS, -EPS, EPS)   # all eps equal
     # Compute log-infidelity safely
     Z = np.log10(np.clip(1 - F_vals, 1e-15, None))
-        
-    # Plot heatmap
-    im = plt.pcolormesh(EPS, THETA, Z, shading='auto', cmap='viridis')
-    plt.colorbar(im, label='Infidelity')
+    # Plot heatmap with no edges and rasterization for clean saving
+    im = plt.pcolormesh(
+        EPS, THETA, Z, 
+        shading='auto', 
+        cmap='viridis', 
+        edgecolors='none',  # Removes the "grid" lines
+        rasterized=True     # Fixes PDF rendering artifacts
+    )
+    plt.colorbar(im, label = r"$\log_{{10}}(1 - F)$")
     plt.xlabel("($\epsilon_1 = \epsilon_3 = -\epsilon_2 = \epsilon$)")
     plt.ylabel("θ₂")
-    plt.title("Infidelity Heatmap vs θ₂ and ($\epsilon_1 = \epsilon_3 = -\epsilon_2$))")
+    _maybe_plt_title("Infidelity Heatmap vs θ₂ and ($\epsilon_1 = \epsilon_3 = -\epsilon_2$))")
     save_figure(r"Infidelity Heatmap vs θ₂ and ε ($\epsilon_1 = \epsilon_3 = -\epsilon_2$)", SAVE_DIR)
    
 # ----------------------------------------
