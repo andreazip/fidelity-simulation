@@ -51,12 +51,12 @@ Edit `GATES` and `J_VALUES` to sweep multiple gates and J easily.
 `alpha_list` and `Joffset_list` are kept for noise/jitter sweeps.
 """
 # Physics base
-J_offset = 100e3
-alpha = 12.5
+J_offset = 10e3
+alpha = 25
 
 # Sweep sets
-GATES = ["X", "Y", "SXH"]            # e.g., ["X", "Y", "SXH"]
-J_VALUES = [100e6,200e6]                 # e.g., [10e6, 20e6]
+GATES = ["X"]            # e.g., ["X", "Y", "SXH"]
+J_VALUES = [200e6, 100e6]                 # e.g., [10e6, 20e6]
 
 # Pulse shaping
 t_rise = 1e-9
@@ -79,7 +79,7 @@ DT_ps_jitter = np.sqrt(target_infidelity_jitter/7/np.sqrt(2))/np.pi*1e12 #time i
 
 # Noise sweeps
 alpha_list = [12.5, 25.0]  # e.g., [12.5, 25.0]
-Joffset_list = [1e3, 10e3, 100e3]
+Joffset_list = [10e3, 100e3]
 
 N_noise = 10  # number of noise amplitudes to simulate per (gate, J, alpha, Joff)
 # Iterations 
@@ -292,11 +292,11 @@ def _collect_specs_rows_from_outputs(
 
 def run_single_shot_check(base_dir: Path):
     """Run one quick Y-gate check with fixed jitter and time resolution."""
-    gate = "Y"
-    J = 100e6
-    alpha_val = 12.5
-    Joff = 1e3
-    dt_resolution = 1.8e-12  # 1.8 ps
+    gate = "X"
+    J = 200e6
+    alpha_val = 25
+    Joff = 10e3
+    dt_resolution = 0.9e-12  # 1.8 ps
     sigma_jitter = 0   # 20 ps
 
     angles = get_gate_angles(gate)
@@ -322,7 +322,7 @@ def run_single_shot_check(base_dir: Path):
     print(f"T         : {T*1e9:.2f} ns")
     print(f"N         : {N}")
 
-    for pulse in ["square", "linear", "RC"]:
+    for pulse in ["linear"]:
         sf, of, qf, _, _ = EO.run_exchange_qubit_simulation(
             J_offset=Joff,
             V1=V,
@@ -332,19 +332,19 @@ def run_single_shot_check(base_dir: Path):
             theta3=angles.theta3,
             theta4=angles.theta4,
             alpha=alpha_val,
-            deltaV=0.0,
+            deltaV=0,
             deltat=0,
             pulse_type=pulse,
             t_rise=t_rise,
             t_fall=t_fall,
             tau=tau,
-            N0_white=0.0,
-            K_flicker=0.0,
-            sigma_jitter=sigma_jitter,
+            N0_white=1e-17,
+            K_flicker=1e-7,
+            sigma_jitter=0.2e-9,
             plot_pulse=True,
-            plot_bloch=False,
+            plot_bloch=True,
             SAVE_DIR=check_dir,
-            T=T,
+            T=9e-9,
             N=N,
             compute_state=True,
             compute_operator=True,

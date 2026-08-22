@@ -9,7 +9,18 @@ import csv
 from matplotlib.ticker import AutoMinorLocator, MaxNLocator, LogLocator, NullLocator, FuncFormatter
 
 HAS_SCIENCEPLOTS = False
-SCIENCE_STYLE = ["science", "std-colors", "no-latex"]
+SCIENCE_STYLE = ["science"]
+SCIENCE_STYLE_OVERRIDES = {
+    "text.usetex": True,
+    "figure.figsize": (3.3, 2.5),
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
+    "legend.title_fontsize": 15,
+}
 SHOW_FIGURE_TITLES = True
 
 try:
@@ -174,11 +185,14 @@ def sigma_jitter_worst(n, J_MHz = 200, target_infidelity=1e-4):
     # Placeholder for the actual calculation of worst-case delta_t
     return np.sqrt(target_infidelity/(n**2))/(J_MHz * 1e6) / np.pi
 
-def N0_worst(n, alpha = 25, fmax = 1e9, theta = np.pi, target_infidelity=1e-4):
+def N0_worst(n, alpha = 25, fmax = 1111e9/2, theta = np.pi, target_infidelity=1e-4, J_MHz = 200):
     # set pi as average rotation angle
     # fmax is the maximum frequency of the noise spectrum, which we set to 1 GHz
     # Placeholder for the actual calculation of worst-case delta_v
-    return target_infidelity/(n**2)/fmax/(alpha * theta)**2
+    coeff = (n**2)
+    A = coeff*theta*alpha**2*np.pi*J_MHz*1e6
+    B = A * 2 *fmax* alpha**2*(1+theta/2/np.pi *fmax/(J_MHz*1e6))
+    return (-A+np.sqrt(A**2+4*B*target_infidelity))/(2*B)
 
 def Kflicker_worst(n, alpha = 25, fmin = 10e6, fmax = 1e9, theta = np.pi, target_infidelity=1e-4):
     # set pi as average rotation angle
@@ -193,23 +207,24 @@ def compute_resolution_results(
     alpha=25,
     theta=np.pi,
     fmin=100e3,
-    fmax=1e9,
+    fmax=0.3e9,
+    fs=1111e9,
     target_infidelity=1e-4,
 ):
     rows = []
     for n in n_values:
         for j_mhz in J_MHz_values:
             dt = delta_t_worst(n, J_MHz=j_mhz, target_infidelity=target_infidelity)
-            sj = sigma_jitter_worst(n, J_MHz=j_mhz, target_infidelity=1.5*target_infidelity)
+            sj = sigma_jitter_worst(n, J_MHz=j_mhz, target_infidelity=target_infidelity)
             dv = delta_v_worst(n, alpha=alpha, theta=theta, target_infidelity=target_infidelity)
-            n0 = N0_worst(n, alpha=alpha, fmax=fmax, theta=theta, target_infidelity=1.5*target_infidelity)
+            n0 = N0_worst(n, alpha=alpha, fmax=fs/2, theta=theta, target_infidelity=target_infidelity, J_MHz=j_mhz)
             kf = Kflicker_worst(
                 n,
                 alpha=alpha,
                 fmin=fmin,
                 fmax=fmax,
                 theta=theta,
-                target_infidelity=1.5*target_infidelity,
+                target_infidelity=target_infidelity,
             )
             rows.append(
                 {
@@ -273,7 +288,9 @@ def plot_time_and_jitter_vs_n(rows, J_MHz_values, folder):
             dt_ps,
             marker="o",
             linestyle="-",
-            label=rf"$\Delta t_{{\mathrm{{gate}}}}$",
+            label=rf"$\Delta t$",
+            color=plt.cm.tab10(0),
+            linewidth=2.0
         )
         ax.plot(
             n_vals,
@@ -281,11 +298,13 @@ def plot_time_and_jitter_vs_n(rows, J_MHz_values, folder):
             marker="o",
             linestyle="--",
             label=rf"$\sigma_{{\mathrm{{jitter}}}}$",
+            color=plt.cm.tab10(1),
+            linewidth=2.0
         )
 
     ax.set_yscale("log")
-    ax.set_xlabel("n")
-    ax.set_ylabel("Resolution [ps]")
+    ax.set_xlabel(r"$n$")
+    ax.set_ylabel(r"$t$ [ps]")
     j_title = ", ".join([f"{j:g}" for j in J_MHz_values])
     _maybe_title(
         ax,
@@ -296,7 +315,7 @@ def plot_time_and_jitter_vs_n(rows, J_MHz_values, folder):
     ax.legend(ncol=1)
     fig.tight_layout()
 
-    out_path = out_dir / "time_and_jitter_vs_n.png"
+    out_path = out_dir / "time_and_jitter_vs_n.pdf"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
     return out_path
@@ -316,13 +335,14 @@ def plot_voltage_related_vs_n(rows, alpha, theta, fmin, fmax, folder):
     kf_vals = np.array([r["Kflicker[V^2/Hz]"] for r in subset])
 
     # Create figure with 3 horizontal subplots placed side-by-side
-    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3), sharex=True)
+    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3))
     
     # 1. Delta V Plot
-    axes[0].plot(n_vals, dv_uV, marker="o", label=r"$\Delta V$")
-    axes[0].set_ylabel(r"$\Delta V$ [$\mu$V]")
-    axes[0].set_xlabel("$n$")
+    axes[0].plot(n_vals, dv_uV, marker="o", label=r"$\Delta V$", linewidth=2.0, color =plt.cm.tab10(0))
+    axes[0].set_ylabel(r"$\Delta V$ [$\mu$V]", fontsize=15)
+    axes[0].set_xlabel("$n$", fontsize=15)
     axes[0].grid(True, which="both", linestyle="--", alpha=0.4)
+    axes[0].tick_params(axis='both', which='major', labelsize=15)
     # _maybe_title(
     #     axes[0],
     #     rf"Voltage Parameters vs $n$ ($\alpha$={alpha:g}, $\theta$={theta:.3f} rad, "
@@ -330,26 +350,26 @@ def plot_voltage_related_vs_n(rows, alpha, theta, fmin, fmax, folder):
     # )
 
     # 2. N0 Plot
-    axes[1].plot(n_vals, n0_vals, marker="o", label=r"$N_0$")
-    axes[1].set_ylabel(r"$N_0$ [V$^2$/Hz]")
-    axes[1].set_xlabel("$n$")
+    axes[1].plot(n_vals, n0_vals, marker="o", label=r"$N_0$", linewidth=2.0, color =plt.cm.tab10(1))
+    axes[1].set_ylabel(r"$N_0$ [V$^2$/Hz]", fontsize=15)
+    axes[1].set_xlabel("$n$", fontsize=15)
     axes[1].grid(True, which="both", linestyle="--", alpha=0.4)
-
+    axes[1].tick_params(axis='both', which='major', labelsize=15)
     # 3. Kflicker Plot
-    axes[2].plot(n_vals, kf_vals, marker="o", label=r"$K_{\mathrm{flicker}}$")
-    axes[2].set_ylabel(r"$K_{\mathrm{flicker}}$ [V$^2$/Hz]")
-    axes[2].set_xlabel("$n$")
+    axes[2].plot(n_vals, kf_vals, marker="o", label=r"$K_{\mathrm{flicker}}$", linewidth=2.0, color =plt.cm.tab10(2))
+    axes[2].set_ylabel(r"$K_{\mathrm{flicker}}$ [V$^2$/Hz]", fontsize=15)
+    axes[2].set_xlabel("$n$", fontsize=15)
     axes[2].grid(True, which="both", linestyle="--", alpha=0.4)
+    axes[2].tick_params(axis='both', which='major', labelsize=15)
 
     # Common formatting for all subplots
     for ax in axes:
         ax.set_yscale("log")
         _style_axis(ax)
-        ax.legend(loc="upper right")
 
     fig.tight_layout()
     
-    out_path = out_dir / "voltage_parameters_3_subplots.png"
+    out_path = out_dir / "voltage_parameters_3_subplots.pdf"
     fig.savefig(out_path, dpi=300, bbox_inches="tight")
     pdf_dir = out_dir / "pdf"
     pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -381,7 +401,7 @@ def plot_delta_t(f_osc=None, scale_factor=314, show_grid=True):
     plt.figure()
     plt.loglog(f_osc, delta_t * 1e12, linestyle='-')  # convert to ns
     plt.xlabel(r'$f_{\mathrm{osc}}$ [MHz]')
-    plt.ylabel(r'$\Delta t_{\mathrm{gate}}$ [ps]')
+    plt.ylabel(r'$t$ [ps]')
     _maybe_plt_title(r'$\Delat t$ vs J')
     if show_grid:
         plt.grid(True, which="both", alpha=0.5)
@@ -426,8 +446,6 @@ def plot_delta_V(theta=None, scale_factor=2500, show_grid=True):
 def plot_all_deltas(
     theta=None,
     f_osc=None,
-    scale_delta_t=[314, 449, 524, 628, 827, 942],
-    scale_delta_V=[50, 500 / 7, 250 / 3, 100, 2500 / 19, 3748 / 25],
     beta=[1, 2, 14 / 4, 4, 7, 9],
 ):
     if theta is None:
@@ -436,23 +454,24 @@ def plot_all_deltas(
         f_osc = np.logspace(0, 3, 200)  # MHz
 
     labels = [
-        r"$\mathrm{Single\ rotation}$",
-        r"$xz$ rotation",
-        r"$nz$ rotation",
-        r"$zz$ rotation",
-        r"$nzn$ rotation",
-        r"$zzz$ rotation",
+        r"$\mathrm{Single}$",
+        r"$xz$",
+        r"$nz$ ",
+        r"$zz$ ",
+        r"$nzn$ ",
+        r"$zzz$ ",
     ]
 
     alpha = 25
     target_infidelity = 1.5e-4
     fmin = 100e3
-    fmax = 1e9
+    fmax = 0.3e9
+    fs = 1111e9/2
     j_ref_mhz = 200.0
     # Use the last plotted theta value so printed reference values match the plotted curves.
-    theta_ref = 2*np.pi-np.arctan(np.sqrt(8))/2  # ≈ 2.07 rad, the largest angle used in the gate library
+    theta_ref = 2*np.pi  # ≈ 2.07 rad, the largest angle used in the gate library
 
-    if not (len(labels) == len(scale_delta_t) == len(scale_delta_V) == len(beta)):
+    if not (len(labels) == len(beta) ):
         raise ValueError("labels, scale_delta_t, scale_delta_V and beta must have the same length")
 
     # Figure 1: keep the existing side-by-side layout for time and voltage resolution.
@@ -461,31 +480,33 @@ def plot_all_deltas(
     voltage_resolution = []
 
     for i, label in enumerate(labels):
-        delta_t = 1 / (f_osc * 1e6 * scale_delta_t[i])  # s
-        delta_v = 1 / (scale_delta_V[i] * theta) / (2 * alpha)  # V
+        delta_t =np.sqrt(target_infidelity/beta[i])*1/(np.pi*f_osc*1e6)  # s
+        delta_v = np.sqrt(target_infidelity/beta[i])*1/(alpha*theta)  # V
 
-        time_resolution.append(1 / (j_ref_mhz * 1e6 * scale_delta_t[i]))
-        voltage_resolution.append(1 / (scale_delta_V[i] * theta_ref) / (2 * alpha))
+        time_resolution.append(np.sqrt(target_infidelity/beta[i])*1/(np.pi*j_ref_mhz*1e6) )
+        voltage_resolution.append(np.sqrt(target_infidelity/beta[i])*1/(alpha*theta_ref))
 
-        axes1[0].loglog(f_osc, delta_t * 1e12, linestyle="-", label=label)
-        axes1[1].semilogy(theta, delta_v * 1e6, linestyle="-", label=label)
+        axes1[0].loglog(f_osc, delta_t * 1e12, linestyle="-", label=label, linewidth=2.0, color =plt.cm.tab10(i))
+        axes1[1].semilogy(theta, delta_v * 1e6, linestyle="-", label=label, linewidth=2.0, color =plt.cm.tab10(i))
 
-    axes1[0].set_xlabel("J [MHz]")
-    axes1[0].set_ylabel(r"$\Delta t$ [ps]")
+    axes1[0].set_xlabel("J [MHz]", fontsize=15)
+    axes1[0].set_ylabel(r"$t$ [ps]", fontsize=15)
     # _maybe_title(axes1[0], r"$\Delta t$ vs J")
     _style_axis(axes1[0])
     axes1[0].legend(frameon=False)
     axes1[0].legend()
+    axes1[0].tick_params(axis='both', which='major', labelsize=15)
 
-    axes1[1].set_xlabel(r"$\theta$ [rad]")
-    axes1[1].set_ylabel(r"$\Delta V$ [$\mu$V]")
-    _maybe_title(axes1[1], r"$\Delta V$ vs $\theta$")
+    axes1[1].set_xlabel(r"$\theta$ [rad]", fontsize=15)
+    axes1[1].set_ylabel(r"$\Delta V$ [$\mu$V]", fontsize=15)
+    # _maybe_title(axes1[1], r"$\Delta V$ vs $\theta$")
     _style_axis(axes1[1])
     axes1[1].legend(frameon=False)
     axes1[1].grid(True, which="both", linestyle="--", alpha=0.4)
+    axes1[1].tick_params(axis='both', which='major', labelsize=15)
 
     fig1.tight_layout()
-    fig1_path = Path(SAVE_DIR) / "time_voltage_resolution_side_by_side.png"
+    fig1_path = Path(SAVE_DIR) / "time_voltage_resolution_side_by_side.pdf"
     fig1.savefig(fig1_path, dpi=300, bbox_inches="tight")
     fig1_pdf_dir = Path(SAVE_DIR) / "pdf"
     fig1_pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -505,38 +526,56 @@ def plot_all_deltas(
             / (alpha * theta) ** 2
             / beta[i]
         )  # V^2/Hz
-        white = target_infidelity / (alpha * theta) ** 2 / fmax / beta[i]  # V^2/Hz
+        coeff = beta[i]
+        J_hz = j_ref_mhz * 1e6
+
+        A = coeff * theta * (alpha**2) * np.pi * J_hz
+
+        # Grouped the 2 * np.pi * J_hz in the denominator to prevent order-of-operation issues
+        B = A * 2 * fs * (alpha**2) * (1 + (theta * fs) / (2 * np.pi * J_hz))
+
+        white = (-A + np.sqrt(A**2 + 4 * B * target_infidelity)) / (2 * B)
+
 
         jitter_resolution.append(np.sqrt(target_infidelity / beta[i]) / (j_ref_mhz * 1e6 * np.pi))
         flicker_noise_resolution.append(
             target_infidelity / np.log(fmax / fmin) / (alpha * theta_ref) ** 2 / beta[i]
         )
-        white_noise_resolution.append(target_infidelity / (alpha * theta_ref) ** 2 / fmax / beta[i])
+        A_ref = coeff * theta_ref * (alpha**2) * np.pi * J_hz
 
-        axes2[0].loglog(f_osc, jitter * 1e12, linestyle="-", label=label)
-        axes2[1].semilogy(theta, flicker, linestyle="-", label=label)
-        axes2[2].semilogy(theta, white, linestyle="-", label=label)
+        # Grouped the 2 * np.pi * J_hz in the denominator to prevent order-of-operation issues
+        B_ref = A_ref * 2 * fs * (alpha**2) * (1 + (theta_ref * fs) / (2 * np.pi * J_hz))
 
-    axes2[0].set_xlabel("J [MHz]")
-    axes2[0].set_ylabel(r"$\sigma_{\mathrm{jitter}}$ [ps]")
-    _maybe_title(axes2[0], r"$\sigma_{\mathrm{jitter}}$ vs $J$")
+        white_ref = (-A_ref + np.sqrt(A_ref**2 + 4 * B_ref * target_infidelity)) / (2 * B_ref)
+        white_noise_resolution.append(white_ref)
+
+        axes2[0].loglog(f_osc, jitter * 1e12, linestyle="-", label=label, linewidth=2.0, color=plt.cm.tab10(i))
+        axes2[1].semilogy(theta, flicker, linestyle="-", label=label, linewidth=2.0, color=plt.cm.tab10(i))
+        axes2[2].semilogy(theta, white, linestyle="-", label=label, linewidth=2.0, color=plt.cm.tab10(i))
+
+    axes2[0].set_xlabel("J [MHz]", fontsize=15)
+    axes2[0].set_ylabel(r"$\sigma_{\mathrm{jitter}}$ [ps]", fontsize=15)
+    # _maybe_title(axes2[0], r"$\sigma_{\mathrm{jitter}}$ vs $J$")
     _style_axis(axes2[0])
     axes2[0].legend()
+    axes2[0].tick_params(axis='both', which='major', labelsize=15)
 
-    axes2[1].set_xlabel(r"$\theta$ [rad]")
-    axes2[1].set_ylabel(r"$K_{\mathrm{flicker}}$ [V$^2$/Hz]")
-    _maybe_title(axes2[1], r"$K_{\mathrm{flicker}}$ vs $\theta$")
+    axes2[1].set_xlabel(r"$\theta$ [rad]", fontsize=15)
+    axes2[1].set_ylabel(r"$K_{\mathrm{flicker}}$ [V$^2$/Hz]", fontsize=15)
+    # _maybe_title(axes2[1], r"$K_{\mathrm{flicker}}$ vs $\theta$")
     _style_axis(axes2[1])
     axes2[1].legend()
+    axes2[1].tick_params(axis='both', which='major', labelsize=15)
 
-    axes2[2].set_xlabel(r"$\theta$ [rad]")
-    axes2[2].set_ylabel(r"$N_0$ [V$^2$/Hz]")
-    _maybe_title(axes2[2], r"$N_0$ vs $\theta$")
+    axes2[2].set_xlabel(r"$\theta$ [rad]", fontsize=15)
+    axes2[2].set_ylabel(r"$N_0$ [V$^2$/Hz]", fontsize=15)
+    # _maybe_title(axes2[2], r"$N_0$ vs $\theta$")
     _style_axis(axes2[2])
     axes2[2].legend()
+    axes2[2].tick_params(axis='both', which='major', labelsize=15)
 
     fig2.tight_layout()
-    fig2_path = Path(SAVE_DIR) / "jitter_flicker_white_side_by_side.png"
+    fig2_path = Path(SAVE_DIR) / "jitter_flicker_white_side_by_side.pdf"
     fig2.savefig(fig2_path, dpi=300, bbox_inches="tight")
     fig2_pdf_dir = Path(SAVE_DIR) / "pdf"
     fig2_pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -573,8 +612,9 @@ def main():
     alpha = 25
     theta = 2*np.pi
     fmin = 100e3
-    fmax = 1e9
-    target_infidelity = 1e-4
+    fmax = 0.3e9
+    fs = 1111e9
+    target_infidelity = 1.5e-4
 
     rows = compute_resolution_results(
         n_values=n_values,
@@ -583,6 +623,7 @@ def main():
         theta=theta,
         fmin=fmin,
         fmax=fmax,
+        fs = fs,
         target_infidelity=target_infidelity,
     )
 

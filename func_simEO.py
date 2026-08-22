@@ -12,6 +12,7 @@ if mp.current_process().name != "MainProcess":
 
 import matplotlib.pyplot as plt
 from functools import partial
+from functools import wraps
 from qutip import basis, sesolve, sigmax, sigmay, sigmaz, tensor, Qobj, qeye
 from scipy.integrate import quad
 from scipy.optimize import brentq
@@ -23,6 +24,100 @@ from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_compl
 from pickle import PicklingError
 import threading
 import sys
+
+HAS_SCIENCEPLOTS = False
+SCIENCE_STYLE = ["science"]
+SCIENCE_STYLE_OVERRIDES = {
+    "text.usetex": True,
+    "figure.figsize": (3.3, 2.5),
+    "font.size": 8,
+    "axes.labelsize": 10,
+    "axes.titlesize": 9,
+    "xtick.labelsize": 8,
+    "ytick.labelsize": 8,
+    "legend.fontsize": 6,
+    "legend.title_fontsize": 8,
+}
+try:
+    import scienceplots  # noqa: F401
+    HAS_SCIENCEPLOTS = True
+except ImportError:
+    HAS_SCIENCEPLOTS = False
+
+SHOW_FIGURE_TITLES = False
+SHOW_FIGURE_GRIDS = False
+
+
+def _maybe_title(title, ax=None, **kwargs):
+    if not SHOW_FIGURE_TITLES:
+        return
+    if ax is None:
+        plt.title(title, **kwargs)
+    else:
+        ax.set_title(title, **kwargs)
+
+
+def _maybe_grid(ax=None, visible=True, **kwargs):
+    if not SHOW_FIGURE_GRIDS:
+        return
+    if ax is None:
+        plt.grid(visible, **kwargs)
+    else:
+        ax.grid(visible, **kwargs)
+
+
+def _maybe_show():
+    plt.close()
+
+
+def _set_sparse_light_x_ticks(ax, nbins=6):
+    ax.xaxis.set_major_locator(MaxNLocator(nbins=nbins))
+    ax.xaxis.set_minor_locator(AutoMinorLocator(2))
+    ax.tick_params(axis="x", which="major", width=0.5)
+    ax.tick_params(axis="x", which="minor", width=0.5)
+
+
+def with_science_style(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        if HAS_SCIENCEPLOTS:
+            with plt.style.context(SCIENCE_STYLE):
+                with plt.rc_context(SCIENCE_STYLE_OVERRIDES):
+                    return func(*args, **kwargs)
+        return func(*args, **kwargs)
+
+    return wrapper
+
+
+def title_to_filename(title, ext="png"):
+    """
+    Convert a title into a safe filename.
+    Example: "PSD at threshold" -> "psd_at_threshold.png"
+    """
+    clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
+    return clean.lower().strip('_') + f".{ext}"
+
+
+def save_figure(title, folder="figures", ext="png"):
+    """
+    Save the current matplotlib figure.
+
+    - Filename: lowercase, underscores
+    - Plot title: spaces instead of underscores, capitalize first letters
+    """
+    folder = Path(folder)
+    folder.mkdir(parents=True, exist_ok=True)
+
+    # Convert underscores to spaces and capitalize words for display
+    #display_title = title.replace('_', ' ').title()
+    #plt.title(display_title)
+
+    # Save figure with clean filename
+    plt.savefig(folder / title_to_filename(title, ext),
+                dpi=300)
+
+    plt.close()
+
 
 def _one_shot_exchange(args):
     """Worker-friendly shot wrapper.
@@ -164,11 +259,11 @@ def title_to_filename(title, ext="png"):
     clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
     return clean.lower().strip('_') + f".{ext}"
 
-def save_figure(title, folder="figures", ext="png"):
+def save_figure(title, folder="figures", ext="pdf"):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
 
-    plt.title(title)
+   
     plt.savefig(folder / title_to_filename(title, ext),
                 dpi=300, bbox_inches="tight")
 
@@ -356,11 +451,17 @@ def I_total(t_end, V0, trise, tfall, Joff, alpha, tau, pulse_type = None):
             0, t_end
             )[0]
 
+def R(pauli, theta):
+    return np.cos(theta/2)*np.eye(2) - 1j*np.sin(theta/2)*pauli
+
+def compute_3pulses(U1, U2, U3, theta1, theta2, theta3):
+    U = ( R(U1, theta1 ) @ R(U2, theta2 )@ R(U3, theta3 ) )
+    return U
 
 # ------------------------------
 #   Simulation Engine
 # ------------------------------
-
+@with_science_style
 def run_exchange_qubit_simulation(
     J_offset, 
     V1, 
@@ -446,12 +547,17 @@ def run_exchange_qubit_simulation(
     U_ideal : Qobj
         Ideal unitary of the full pulse sequence.
     """
+    X = np.array([[0, 1], [1, 0]], dtype=complex)
+    Y = np.array([[0, -1j], [1j, 0]], dtype=complex)
+    Z = np.array([[1, 0], [0, -1]], dtype=complex)
+    n = -(np.sqrt(3)*X+ Z)/2 # this should be with a minus
 
+    
     sx, sy, sz = sigmax(), sigmay(), sigmaz()
 
     # define states for state fidelity
-    psi0 = basis(2,1) 
-    psi_target = basis(2,0)
+    psi0 = basis(2,0) 
+    psi_target = basis(2,1)
 
     # psi0 = (basis(2,0) + basis(2,1)).unit()  # normalized
     # # Target after Y gate (up to global phase)
@@ -572,8 +678,7 @@ def run_exchange_qubit_simulation(
     
 
     tlist = np.linspace(0, T, N)
-
-    # Parameter list passed into pulse generator
+  # Parameter list passed into pulse generator
 
     if pulse_type == "square":
         J12_params = []
@@ -734,21 +839,23 @@ def run_exchange_qubit_simulation(
     # Optional plots
     if plot_bloch:
         # Sample trajectory using propagators at intermediate times
-        states_sample = [qt.propagator(H, np.array([0.0, t]))[-1] * psi0 for t in tlist]
+        results= qt.sesolve(H, psi0, tlist)
+        states_sample = results.states
         b = qt.Bloch()
         x = [qt.expect(sx, s) for s in states_sample]
         y = [qt.expect(sy, s) for s in states_sample]
         z = [qt.expect(sz, s) for s in states_sample]
         b.add_points([x, y, z])
         b.show()
+        save_figure(f"BlochSphere_{pulse_type}", SAVE_DIR, ext = "pdf")
+        
 
     if plot_pulse:
         J12_vals = [J12_func(t)/2/np.pi/1e6 for t in tlist]
         J23_vals = [J23_func(t)/2/np.pi/1e6 for t in tlist]
-        plt.figure()
         plt.plot(tlist*1e9, J12_vals, label="J12(t) [MHz]")
         plt.plot(tlist*1e9, J23_vals, label="J23(t) [MHz]")
-        plt.legend()
+        plt.legend(loc = "upper right")
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [MHz]")
         save_figure(f"Pulse Sequence J {pulse_type} deltaV {np.round(deltaV*1e6,2)} uV deltat {np.round(deltat*1e12,2)} ps", SAVE_DIR)
@@ -757,10 +864,10 @@ def run_exchange_qubit_simulation(
         V23_func = make_voltage_function(pulse_type, J23_params)
         V12_vals = [V12_func(t)*1e3 for t in tlist]
         V23_vals = [V23_func(t)*1e3 for t in tlist]
-        plt.figure()
+        
         plt.plot(tlist*1e9,V12_vals, label="V12(t) [mV]")
         plt.plot(tlist*1e9, V23_vals, label="V23(t) [mV]")
-        plt.legend()
+        plt.legend(loc = "upper right")
         plt.xlabel("Time [ns]")
         plt.ylabel("Amplitude [mV]")
         save_figure(f"Pulse Sequence V {pulse_type} deltaV {np.round(deltaV*1e6,2)} uV deltat {np.round(deltat*1e12,2)} ps", SAVE_DIR)

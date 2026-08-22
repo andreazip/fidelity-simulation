@@ -13,13 +13,13 @@ SCIENCE_STYLE = ["science", "std-colors", "no-latex"]
 SCIENCE_STYLE_OVERRIDES = {
     "text.usetex": True,
     "figure.figsize": (3.3, 2.5),
-    "font.size": 8,
-    "axes.labelsize": 10,
-    "axes.titlesize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 6,
-    "legend.title_fontsize": 8,
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
+    "legend.title_fontsize": 15,
 }
 SHOW_FIGURE_TITLES = False
 try:
@@ -354,9 +354,9 @@ comparison_dir = OUT_DIR / "alpha_vs_joffset_comparison"
 comparison_dir.mkdir(parents=True, exist_ok=True)
 
 mode_labels = {
-    "unbounded": "unbounded",
-    "bounded_1_10kHz": "10 kHz bound",
-    "bounded_1_100kHz": "100 kHz bound",
+    "unbounded": "Best fit",
+    "bounded_1_10kHz": r"$\mathrm{1~kHz-10~kHz}$",
+    "bounded_1_100kHz": r"$\mathrm{1~kHz-100~kHz}$",
 }
 mode_markers = {
     "unbounded": "o",
@@ -419,12 +419,12 @@ for target_j_hz_all in target_j_hz_values:
         linestyles=["--", "-."],
         linewidths=1.6,
     )
-    ax_exp.clabel(cont_exp, fmt={v_all_min_mv: "180 mV", v_all_max_mv: "280 mV"}, inline=True, fontsize=8)
+    # ax_exp.clabel(cont_exp, fmt={v_all_min_mv: "180 mV", v_all_max_mv: "280 mV"}, inline=True, fontsize=8)
 
     for panel, color in zip(panel_order, panel_palette):
         x_alpha = np.array([all_modes_summary[m][panel]["alpha_exp"] for m in RUN_MODES])
         y_j0_khz = np.array([all_modes_summary[m][panel]["Joffset_exp_Hz"] for m in RUN_MODES]) / 1e3
-        ax_exp.plot(x_alpha, y_j0_khz, "-", color=color, linewidth=2.0, label=f"Panel {panel}")
+        ax_exp.plot(x_alpha, y_j0_khz, "-", linewidth=2.0, label=f"Panel {panel}", color =plt.cm.tab10(panel_order.index(panel)))
 
         for mode, x, y in zip(RUN_MODES, x_alpha, y_j0_khz):
             ax_exp.scatter(
@@ -433,7 +433,7 @@ for target_j_hz_all in target_j_hz_values:
                 s=70,
                 marker=mode_markers[mode],
                 facecolor="white",
-                edgecolor=color,
+                edgecolor=plt.cm.tab10(panel_order.index(panel)),
                 linewidth=1.5,
                 zorder=3,
             )
@@ -479,10 +479,10 @@ for target_j_hz_all in target_j_hz_values:
         edgecolor="black",
         framealpha=1.0,
         loc="lower left",
-        fontsize=6,
+        fontsize=8,
     )
     cbar_exp = fig_exp.colorbar(hm_exp, ax=ax_exp)
-    cbar_exp.set_label(f"V, for J={target_j_mhz:g} MHz [mV]")
+    cbar_exp.set_label(f"V, J={target_j_mhz:g} MHz [mV]")
     out_exp = comparison_dir / f"all_panels_alpha_vs_joffset_exp_modes_J{int(target_j_mhz)}MHz.png"
     _save_png_and_pdf(fig_exp, out_exp, dpi=300, bbox_inches="tight")
     plt.close(fig_exp)
@@ -545,7 +545,7 @@ for target_j_hz_all in target_j_hz_values:
             ax_10.scatter(
                 alpha_pt,
                 j0_khz,
-                s=120,
+                s=80,
                 marker="o",
                 facecolor="red",
                 edgecolor="white",
@@ -554,8 +554,8 @@ for target_j_hz_all in target_j_hz_values:
             )
 
     ax_10.set_yscale("log")
-    ax_10.set_xlabel(r"$\alpha [V^{-1}]$")
-    ax_10.set_ylabel(r"$J_{\mathrm{offset}}$ [kHz]")
+    ax_10.set_xlabel(r"$\alpha [V^{-1}]$", fontsize=12)
+    ax_10.set_ylabel(r"$J_{\mathrm{offset}}$ [kHz]", fontsize=12)
     _style_axis(ax_10)
     _maybe_title(ax_10, f"All panels together: 10x fit with V({target_j_mhz:g} MHz) heatmap")
     panel_legend = ax_10.legend(
@@ -578,7 +578,7 @@ for target_j_hz_all in target_j_hz_values:
     )
     cbar_10 = fig_10.colorbar(hm_10, ax=ax_10)
     cbar_10.set_label(f"V for J={target_j_mhz:g} MHz (mV)")
-    out_10 = comparison_dir / f"all_panels_alpha_vs_joffset_10x_modes_J{int(target_j_mhz)}MHz.png"
+    out_10 = comparison_dir / f"all_panels_alpha_vs_joffset_10x_modes_J{int(target_j_mhz)}MHz.pdf"
     _save_png_and_pdf(fig_10, out_10, dpi=300, bbox_inches="tight")
     plt.close(fig_10)
 

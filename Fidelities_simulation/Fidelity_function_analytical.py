@@ -12,13 +12,13 @@ SCIENCE_STYLE = ["science", "std-colors", "no-latex"]
 SCIENCE_STYLE_OVERRIDES = {
     "text.usetex": True,
     "figure.figsize": (3.3, 2.5),
-    "font.size": 8,
-    "axes.labelsize": 10,
-    "axes.titlesize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 6,
-    "legend.title_fontsize": 8,
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
+    "legend.title_fontsize": 15,
 }
 SHOW_FIGURE_TITLES = False
 try:
@@ -74,7 +74,7 @@ def title_to_filename(title, ext="png"):
     clean = re.sub(r'[^a-zA-Z0-9_]+', '_', title)
     return clean.lower().strip('_') + f".{ext}"
 
-def save_figure(title, folder="figures", ext="png"):
+def save_figure(title, folder="figures", ext="pdf"):
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)
 
@@ -223,10 +223,11 @@ def plot_heatmap(E1, E2, Z, xlabel="ε1", ylabel="ε2", title="Fidelity Heatmap"
     im = plt.imshow(Z_plot, extent=[E1.min(), E1.max(), E2.min(), E2.max()],
                     origin='lower', cmap='viridis', aspect='auto')
     plt.colorbar(im, r"$\log_{{10}}(1 - F)$")
-    plt.xlabel(xlabel)
-    plt.ylabel(ylabel)
+    plt.xlabel(xlabel, fontsize=12)
+    plt.ylabel(ylabel, fontsize=12)
+    plt.tick_params(axis='both', which='major', labelsize=12)
     _maybe_plt_title(title)
-    save_figure(rf"{title}", SAVE_DIR)
+    save_figure(rf"{title}.pdf", SAVE_DIR)
 
 
 def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
@@ -253,7 +254,7 @@ def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
     vmin = min(np.min(m) for m in inf_maps)
     vmax = max(np.max(m) for m in inf_maps)
 
-    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3))
+    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3.5))
     im = None
     for ax, (name, _, _), m, (E1, E2) in zip(axes, cases, inf_maps, grids):
         im = ax.imshow(
@@ -266,21 +267,23 @@ def plot_group_xz_nz_xx(save_dir=SAVE_DIR):
             vmax=vmax,
         )
         _maybe_title(ax, name)
-        ax.set_xlabel("ε1", labelpad=0.2)
-        ax.set_ylabel("ε2", labelpad=0.2)
+        ax.set_xlabel(r"$\mathrm{\epsilon}_1$ [rad]", labelpad=0.2, fontsize=15)
+        ax.set_ylabel(r"$\mathrm{\epsilon}_2$ [rad]", labelpad=0.2, fontsize=15)
         # 2. Set 3 points for the X-axis (E1)
         ax.set_xticks(np.linspace(E1.min(), E1.max(), 3))
-        ax.tick_params(axis='x', which='major', pad=10)
+       
         # 3. Set 5 points for the Y-axis (E3)
         ax.set_yticks(np.linspace(E2.min(), E2.max(), 5))
         # 2. Format to show exactly 3 decimal places
         # '%.3f' means "floating point with 3 digits after the dot"
+        ax.tick_params(axis='both', which='major', pad=10, labelsize=12)
         ax.xaxis.set_major_formatter(FormatStrFormatter('%.3f'))
         ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
     fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.32)
-    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label=r"$\log_{{10}}(1 - F)$")
-    save_figure("Infidelity Heatmaps xz nz xx", save_dir)
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035,aspect=12, pad=0.03)
+    cbar.set_label(r"$\log_{{10}}(1 - F)$", fontsize=15)
+    save_figure("Infidelity Heatmaps xz nz xx.pdf", save_dir)
 
 
 def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
@@ -306,7 +309,7 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
     vmin = min(np.min(m) for m in inf_maps)
     vmax = max(np.max(m) for m in inf_maps)
 
-    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3))
+    fig, axes = plt.subplots(1, 3, figsize=_multi_panel_figsize(1, 3.5))
     im = None
     for ax, m, title in zip(axes, inf_maps, titles):
         im = ax.imshow(
@@ -319,13 +322,14 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
             vmax=vmax,
         )
         _maybe_title(ax, title)
-        ax.set_xlabel("ε1", labelpad=0.2)
-        ax.set_ylabel("ε3", labelpad=0.2)
+        ax.set_xlabel(r"$\mathrm{\epsilon}_1$ [rad]", labelpad=0.2, fontsize=15)
+        ax.set_ylabel(r"$\mathrm{\epsilon}_3$ [rad]", labelpad=0.2, fontsize=15)
         # 2. Set 3 points for the X-axis (E1)
         ax.set_xticks(np.linspace(E1.min(), E1.max(), 3))
         ax.tick_params(axis='x', which='major', pad=10)
         # 3. Set 5 points for the Y-axis (E3)
         ax.set_yticks(np.linspace(E3.min(), E3.max(), 5))
+        ax.tick_params(axis='both', which='major', labelsize=12)
 
         # 2. Format to show exactly 3 decimal places
         # '%.3f' means "floating point with 3 digits after the dot"
@@ -333,9 +337,10 @@ def plot_group_znz_nzn_zzz(save_dir=SAVE_DIR):
         ax.yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
 
     fig.subplots_adjust(left=0.07, right=0.87, bottom=0.14, top=0.82, wspace=0.3)
-    fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, pad=0.03, label=r"$\log_{{10}}(1 - F)$")
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), aspect=12, fraction=0.035, pad=0.03)
+    cbar.set_label(r"$\log_{{10}}(1 - F)$", fontsize=15)
 
-    save_figure("Infidelity Heatmaps znz nzn zzz", save_dir)
+    save_figure("Infidelity Heatmaps znz nzn zzz.pdf", save_dir)
     
 # ----------------------------------------
 # Heatmap plotting for different
@@ -349,22 +354,26 @@ def plot_heatmaps_theta2(theta_list, E1, E2, E3, fixed_3 =True,  xlabel="ε1", y
         Z = np.clip(Z, 1e-15, None)
         if fixed_3:
             im = ax.pcolormesh(E1, E2, np.log10(Z), shading='auto')
-            _maybe_title(ax, f"θ₂ = {theta2:.2f}")
-            ax.set_xlabel("ε1")
-            ax.set_ylabel("ε2")
+            _maybe_title(ax, rf"$\theta_2 = {theta2:.2f}$")
+            ax.set_xlabel(r"$\epsilon_1$", fontsize=12)
+            ax.set_ylabel(r"$\epsilon_2$", fontsize=12)
+            ax.tick_params(axis='both', which='major', labelsize=12)
         else:
             im = ax.pcolormesh(E1, E3, np.log10(Z), shading='auto')
-            _maybe_title(ax, f"θ₂ = {theta2:.2f}")
-            ax.set_xlabel("ε1")
-            ax.set_ylabel("ε3")
+            _maybe_title(ax, rf"$\theta_2 = {theta2:.2f}$")
+            ax.set_xlabel(r"$\epsilon_1$", fontsize=12)
+            ax.set_ylabel(r"$\epsilon_3$", fontsize=12)
+            ax.tick_params(axis='both', which='major', labelsize=12)
 
-    fig.colorbar(im, ax=axes.ravel().tolist(), label=r"$\log_{10}(1 - F)$")
+    cbar = fig.colorbar(im, ax=axes.ravel().tolist(), fraction=0.035, aspect=12, pad=0.03)
+    cbar.set_label(r"$\log_{10}(1 - F)$", fontsize=12)
+
     # Add a figure-wide title
     #fig.suptitle(title, fontsize=16)
     if fixed_3:
-        save_figure(rf"θ₂ = {theta2:.2f}", SAVE_DIR_1)
+        save_figure(rf"θ₂ = {theta2:.2f}.pdf", SAVE_DIR_1)
     else:
-        save_figure(rf"θ₂ = {theta2:.2f}", SAVE_DIR)
+        save_figure(rf"θ₂ = {theta2:.2f}.pdf", SAVE_DIR)
 
 
 
@@ -406,10 +415,11 @@ def plot_heatmap_theta_vs_epsilon(theta_range, epsilon_range, resolution_theta=1
         rasterized=True     # Fixes PDF rendering artifacts
     )
     plt.colorbar(im, label = r"$\log_{{10}}(1 - F)$")
-    plt.xlabel("($\epsilon_1 = \epsilon_3 = -\epsilon_2 = \epsilon$)")
-    plt.ylabel("θ₂")
-    _maybe_plt_title("Infidelity Heatmap vs θ₂ and ($\epsilon_1 = \epsilon_3 = -\epsilon_2$))")
-    save_figure(r"Infidelity Heatmap vs θ₂ and ε ($\epsilon_1 = \epsilon_3 = -\epsilon_2$)", SAVE_DIR)
+    plt.xlabel("($\epsilon_1 = \epsilon_3 = -\epsilon_2 = \epsilon$) [rad]", fontsize=12)
+    plt.ylabel(r"$\theta_2$ [rad]", fontsize=12)
+    plt.tick_params(axis='both', which='major', labelsize=12)
+    _maybe_plt_title(rf"Infidelity Heatmap vs $\theta_2$ and ($\epsilon_1 = \epsilon_3 = -\epsilon_2$))")
+    save_figure(r"Infidelity Heatmap vs $\theta_2$ and $\epsilon$ ($\epsilon_1 = \epsilon_3 = -\epsilon_2$).pdf", SAVE_DIR)
    
 # ----------------------------------------
 # Example usage for 2D fidelities

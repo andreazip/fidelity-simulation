@@ -12,19 +12,20 @@ from scipy.signal import welch
 from pathlib import Path
 import re
 from gate_library import get_gate_angles, GATE_LIBRARY
+from scipy import special
 
 HAS_SCIENCEPLOTS = False
 SCIENCE_STYLE = ["science"]
 SCIENCE_STYLE_OVERRIDES = {
     "text.usetex": True,
     "figure.figsize": (3.3, 2.5),
-    "font.size": 8,
-    "axes.labelsize": 10,
-    "axes.titlesize": 9,
-    "xtick.labelsize": 8,
-    "ytick.labelsize": 8,
-    "legend.fontsize": 6,
-    "legend.title_fontsize": 8,
+    "font.size": 12,
+    "axes.labelsize": 12,
+    "axes.titlesize": 12,
+    "xtick.labelsize": 12,
+    "ytick.labelsize": 12,
+    "legend.fontsize": 12,
+    "legend.title_fontsize": 15,
 }
 try:
     import scienceplots  # noqa: F401
@@ -64,6 +65,16 @@ def _set_sparse_light_x_ticks(ax, nbins=6):
     ax.tick_params(axis="x", which="major", width=0.5)
     ax.tick_params(axis="x", which="minor", width=0.5)
 
+def _multi_panel_figsize(nrows, ncols):
+    base_w, base_h = plt.rcParams.get("figure.figsize", (6.4, 4.8))
+    width_scale = max(1, ncols)
+    height_scale = max(1, nrows)
+    if ncols == 2:
+        height_scale *= 1.5  # slightly reduce height for 2-column layouts
+    elif ncols >= 3:
+        height_scale *= 1.7  # more reduction for 3+ columns
+    return base_w * width_scale, base_h * height_scale
+
 
 def with_science_style(func):
     @wraps(func)
@@ -86,7 +97,7 @@ def title_to_filename(title, ext="png"):
     return clean.lower().strip('_') + f".{ext}"
 
 
-def save_figure(title, folder="figures", ext="png"):
+def save_figure(title, folder="figures", ext="pdf"):
     """
     Save the current matplotlib figure.
 
@@ -222,6 +233,8 @@ def plot_infidelity_vs_noise(
 
     f_cutoff = J*2*np.pi/theta_min
 
+    print(f"Frequency cutoff for noise: {f_cutoff/1e9:.2f} GHz, Nyquist frequency: {fs/2/1e9:.2f} GHz")
+
 
     # ================= LOAD DATA =================
     data = np.load(data_file, allow_pickle=True)
@@ -243,7 +256,7 @@ def plot_infidelity_vs_noise(
         "_state": "state fidelity",
         "_qpt": "QPT fidelity",
     }
-    colors = {"square": None, "linear": None, "RC": None}
+    colors = {"square": plt.cm.tab10(0), "linear": plt.cm.tab10(1), "RC": plt.cm.tab10(2)}
 
     # Frequency grid
     f = np.fft.rfftfreq(N, 1 / fs)
@@ -284,37 +297,71 @@ def plot_infidelity_vs_noise(
         #analytical caluclation
         theta_avg = np.max(theta)
 
-        inF_first = 2/3* (4+3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*N0_array*f_cutoff
+        #inF_first = 2/3* (4 + 3*np.cos(theta[1]/2)**2)*(alpha*theta_avg)**2*N0_array*f_cutoff
+        beta = 2/3* (4 + 3*np.cos(theta[1]/2)**2) *theta_avg*alpha**2*N0_array
+        first_order_term = np.pi*J
+        second_order_term = N0_array*fs/2*alpha**2*(fs/2*theta_avg + 2*np.pi*J)
+        inF_first = beta * first_order_term 
+        inF_second = beta *(first_order_term + second_order_term)
 
-        # Assuming alpha, theta, and theta[1] are already defined
-        # N0_array and f_cutoff are also assumed to be defined
+        # # Assuming alpha, theta, and theta[1] are already defined
+        # # N0_array and f_cutoff are also assumed to be defined
+        # # Simulation settings
+        # n_samples = 10_000                 # Number of random noise realizations (paths)
+        # # 1. Define the physical integration period (Pulse Duration T)
+        # # From your thesis: theta = 2 * pi * J * T -> T = theta / (2 * pi * J)
+        # # Assuming theta_avg is your target 2*pi rotation
+        # T_pulse = np.mean(theta) / (2 * np.pi * J)  
 
-        # 1. Calculate sigma_v for the entire array
-        sigma_v_array = np.sqrt(N0_array * f_cutoff)
+        # # 2. Define your time resolution
+        # n_time_steps = 500  # Number of slices inside the integration window
+        # fmax = fs/2
+        # # 3. Explicitly calculate dt based on the integration period
+        # dt = T_pulse / (n_time_steps - 1)
+        
+        # inF =[]
 
-        # 2. Setup Dimensions
-        n_samples = 1_000_000  # Reduced slightly for memory safety during vectorization
-        # Create a 2D Gaussian noise matrix: (len(N0_array), n_samples)
-        # We multiply the standard normal by the column vector of sigma_theta
-        sigma_theta_vec =theta_avg *(np.exp(2*alpha * sigma_v_array)-1)[:, np.newaxis]
-        dt = np.random.standard_normal((len(N0_array), n_samples)) * sigma_theta_vec
+        # # 2. Loop through each noise level to calculate exact time-varying integrals
+        # for N0 in N0_array:
+            
+        #     # Generate continuous white noise paths in the voltage domain
+        #     # Continuous white noise integrated over dt has a variance of N0 / (2 * dt)
+        #     # Shape: (n_samples, n_time_steps)
+        #     sigma_v_step = np.sqrt(N0 * fmax)  # Standard deviation for each time step
+        #     delta_V_paths = np.random.normal(0, sigma_v_step, size=(n_samples, n_time_steps))
+            
+        #     # Evaluate the exact integrand: e^(2 * alpha * delta_V(t))
+        #     integrand_paths = np.exp(2 * alpha * delta_V_paths)
+            
+        #     # Perform the time integration over the pulse length using the Trapezoidal Rule
+        #     # This evaluates: \int_0^T e^{2\alpha \delta V(t)} dt for every path
+        #     integrated_time_factor = np.trapezoid(integrand_paths, dx=dt, axis=1)
+            
+        #     # Calculate the actual accumulated phase rotation for each path
+        #     # \theta_{real} = 2 * \pi * J(V_0) * \int_0^T e^{2\alpha \delta V(t)} dt
+        #     theta_real = 2 * np.pi * J * integrated_time_factor
+            
+        #     # The phase error Δθ is the difference between real and target rotation
+        #     DeltaTheta = theta_real - np.mean(theta)  # Assuming theta_avg is the target rotation angle
+            
+        #     # Map the error to the Bloch sphere single rotation error (epsilon = Δθ / 2)
+        #     eps = DeltaTheta / 2.0
+            
+        #     # 3. Apply the COMPLETE nzn process fidelity definition from Table 3.2
+        #     # Condition: eps1 = eps3 = eps, eps2 = -eps -> eps_tot = eps
+        #     term1 = np.cos(eps)**3
+        #     term2 = (np.sin(eps)**2 / 4.0) * (3 * np.cos(theta[1] - eps) + np.cos(-eps))
+        #     term3 = 0.5 * np.sin(-eps) * np.sin(eps)
+            
+        #     fidelity_pro = (term1 - term2 + term3)**2
 
-        # 3. Apply the COMPLETE fidelity definition (Vectorized)
-        # All operations (cos, sin, **) work element-wise on the 2D array 'dt'
-        term1 = np.cos(dt/2)**3
-
-        # Use theta[1] as the phase parameter theta2 from your image
-        term2 = (np.sin(dt/2)**2 / 4.0) * (3 * np.cos(theta[1] - dt) + np.cos(dt))
-
-        # eps1=eps3=dt, eps2=-dt -> sin(e_tot)/2 * sin(e2) -> sin(dt)/2 * sin(-dt)
-        term3 = -0.5 * np.sin(dt/2)**2
-
-        fidelity = (term1 - term2 + term3)**2
-        infidelity = 1 - fidelity
-
-        # 4. Calculate Standard Deviation across the samples (axis=1)
-        # This results in an array 'inF' with the same length as N0_array
-        inF = 2/3 *np.mean(infidelity, axis=1)
+            
+        #     infidelity_pro = 1 - fidelity_pro
+        #     infidelity_pro = (4 + 3*np.cos(theta[1]/2)**2)*eps**2
+        #     print(f"Noise level N0={N0:.3e}: Average Infidelity = {np.mean(infidelity_pro):.3e}")
+        #     # 4. Convert to Average Infidelity (inF_avg = 2/3 * inF_pro)
+        #     inF_avg = 2/3 * np.mean(infidelity_pro)
+        #     inF.append(inF_avg)
 
         pulse_labels = {"square": "Square", "linear": "Linear", "RC": "RC"}
         # ================= WHITE NOISE PLOT =================
@@ -328,6 +375,7 @@ def plot_infidelity_vs_noise(
                     N0_array,
                     y,
                     color=colors.get(pulse),
+                    linewidth=2,
                     label=pulse_labels.get(pulse),
                 )
 
@@ -341,33 +389,36 @@ def plot_infidelity_vs_noise(
                     alpha=0.15,
                 )
 
-            # plt.plot(
-            #         N0_array,
-            #         inF,
-            #         linestyle="--",
-            #         color="black",
-            #         label="Ideal infidelity",
-            #     )
+            plt.plot(
+                    N0_array,
+                    inF_second,
+                    linewidth=2,
+                    linestyle="--",
+                    color="black",
+                    label=r"$\mathrm{inF}_{\mathrm{id}}^{2^{\mathrm{nd}}}$",
+                )
             
             plt.plot(
                     N0_array,
                     inF_first,
+                    linewidth=2,
                     linestyle="--",
                     color="gray",
-                    label=r"$Inf_{ideal}$",
+                    label=r"$\mathrm{inF}_{\mathrm{id}}^{1^{\mathrm{st}}}$",
                 )
 
-            plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
+            plt.axhline(threshold, color="black", linestyle=":", label=r"$\mathrm{inF}_{\mathrm{th}}$")
             plt.yscale("log")
             plt.xlabel(r"$N_0\;[V^2/\mathrm{Hz}]$")
-            plt.ylabel("Inf")
+            plt.ylabel(r"$\mathrm{inF}$")
             _set_sparse_light_x_ticks(plt.gca())
             _maybe_title(
                 f"Gate: {GATE} - White Noise – {titles[metric]}\n"
                 f"J={J/1e6:.0f} MHz, $\\alpha$={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
-            plt.legend()
+            plt.legend(loc='best', fontsize=9)
             plt.grid(True, which="both", alpha=0.5)
+            plt.tick_params(axis='both', which='major', labelsize=12)
             save_figure(f"white_noise_{titles[metric]}", save_dir)
             _maybe_show()
 
@@ -375,32 +426,76 @@ def plot_infidelity_vs_noise(
         # Assuming alpha, theta, and theta[1] are already defined
         # N0_array and f_cutoff are also assumed to be defined
 
-        # 1. Calculate sigma_v for the entire array
-        sigma_v_array = np.sqrt(S1Hz_array*np.log(f_cutoff/(fs/N)))
+        # Assuming alpha, theta, and theta[1] are already defined
+        # N0_array and f_cutoff are also assumed to be defined
+        # Simulation settings
+        n_samples = 10_000                 # Number of random noise realizations (paths)
+        # 1. Define the physical integration period (Pulse Duration T)
+        # From your thesis: theta = 2 * pi * J * T -> T = theta / (2 * pi * J)
+        # Assuming theta_avg is your target 2*pi rotation
+        T_pulse = np.mean(theta) / (2 * np.pi * J)  
 
-        # 2. Setup Dimensions
-        n_samples = 1_000_000  # Reduced slightly for memory safety during vectorization
-        # Create a 2D Gaussian noise matrix: (len(S1Hz_array), n_samples)
-        # We multiply the standard normal by the column vector of sigma_theta
-        sigma_theta_vec =theta_avg *(np.exp(2*alpha * sigma_v_array)-1)[:, np.newaxis]
-        dt = np.random.standard_normal((len(S1Hz_array), n_samples)) * sigma_theta_vec
+        # 2. Define your time resolution
+        n_time_steps = 500  # Number of slices inside the integration window
+        fmax = f_cutoff
+        # 3. Explicitly calculate dt based on the integration period
+        dt = T_pulse / (n_time_steps - 1)
+        
+        inF =[]
 
-        # 3. Apply the COMPLETE fidelity definition (Vectorized)
-        # All operations (cos, sin, **) work element-wise on the 2D array 'dt'
-        term1 = np.cos(dt/2)**3
+        # # 2. Loop through each noise level to calculate exact time-varying integrals
+        # for K_flicker in S1Hz_array:
+            
+        #     # Generate continuous white noise paths in the voltage domain
+        #     # Continuous white noise integrated over dt has a variance of N0 / (2 * dt)
+        #     # Shape: (n_samples, n_time_steps)
+        #     # CORRECTED NUMERICAL SETUP FOR QUASI-STATIC FLICKER NOISE
+        #     # Calculate total variance for the shot-to-shot drift
+        #     sigma_flicker_total = np.sqrt(K_flicker * np.log(T / T_pulse))
 
-        # Use theta[1] as the phase parameter theta2 from your image
-        term2 = (np.sin(dt/2)**2 / 4.0) * (3 * np.cos(theta[1] - dt) + np.cos(dt))
+        #     # Generate ONE random constant per sample path, NOT per time step!
+        #     # Shape: (n_samples, 1) broadcasted across time steps
+        #     delta_V_static = np.random.normal(0, sigma_flicker_total, size=(n_samples, 1))
+        #     delta_V_paths = np.repeat(delta_V_static, n_time_steps, axis=1)
 
-        # eps1=eps3=dt, eps2=-dt -> sin(e_tot)/2 * sin(e2) -> sin(dt)/2 * sin(-dt)
-        term3 = -0.5 * np.sin(dt/2)**2
+        #     # Now pass this through your exact same exp() and integration loop...
+        #     integrand_paths = np.exp(2 * alpha * delta_V_paths)
+            
+        #     # Evaluate the exact integrand: e^(2 * alpha * delta_V(t))
+        #     integrand_paths = np.exp(2 * alpha * delta_V_paths)
+            
+        #     # Perform the time integration over the pulse length using the Trapezoidal Rule
+        #     # This evaluates: \int_0^T e^{2\alpha \delta V(t)} dt for every path
+        #     integrated_time_factor = np.trapezoid(integrand_paths, dx=dt, axis=1)
+            
+        #     # Calculate the actual accumulated phase rotation for each path
+        #     # \theta_{real} = 2 * \pi * J(V_0) * \int_0^T e^{2\alpha \delta V(t)} dt
+        #     theta_real = 2 * np.pi * J * integrated_time_factor
+            
+        #     # The phase error Δθ is the difference between real and target rotation
+        #     DeltaTheta = theta_real - np.mean(theta)  # Assuming theta_avg is the target rotation angle
+            
+        #     # Map the error to the Bloch sphere single rotation error (epsilon = Δθ / 2)
+        #     eps = DeltaTheta / 2.0
+            
+        #     # 3. Apply the COMPLETE nzn process fidelity definition from Table 3.2
+        #     # Condition: eps1 = eps3 = eps, eps2 = -eps -> eps_tot = eps
+        #     term1 = np.cos(eps)**3
+        #     term2 = (np.sin(eps)**2 / 4.0) * (3 * np.cos(theta[1] - eps) + np.cos(-eps))
+        #     term3 = 0.5 * np.sin(-eps) * np.sin(eps)
+            
+        #     fidelity_pro = (term1 - term2 + term3)**2
 
-        fidelity = (term1 - term2 + term3)**2
-        infidelity = 1 - fidelity
+            
+        #     infidelity_pro = 1 - fidelity_pro
+        #     infidelity_pro = (4 + 3*np.cos(theta[1]/2)**2)*eps**2
+        #     print(f"Noise level S1Hz={K_flicker:.3e}: Average Infidelity = {np.mean(infidelity_pro):.3e}")
+        #     # 4. Convert to Average Infidelity (inF_avg = 2/3 * inF_pro)
+        #     inF_avg = 2/3 * np.mean(infidelity_pro)
+        #     inF.append(inF_avg)
 
-        # 4. Calculate Standard Deviation across the samples (axis=1)
-        # This results in an array 'inF' with the same length as S1Hz_array
-        inF = 2/3 * np.mean(infidelity, axis=1)
+            
+        
 
         # ================= PINK NOISE PLOT =================
         if (inf_pink is not None) and (S1Hz_array.size > 0):
@@ -413,6 +508,7 @@ def plot_infidelity_vs_noise(
                     y,
                     color=colors.get(pulse),
                     label=pulse_labels.get(pulse),
+                    linewidth=2
                 )
 
                 current_color = plt.gca().lines[-1].get_color()
@@ -437,20 +533,22 @@ def plot_infidelity_vs_noise(
                     S1Hz_array,
                     inF_first,
                     linestyle="--",
+                    linewidth=2,
                     color="gray",
-                    label=r"$Inf_{ideal}$",
+                    label=r"$\mathrm{inF}_{\mathrm{id}}$",
                 )
-            plt.axhline(threshold, color="black", linestyle=":", label="Threshold")
+            plt.axhline(threshold, color="black", linestyle=":", label=r"$\mathrm{inF}_{\mathrm{th}}$")
             plt.yscale("log")
             plt.xlabel(r"$S(1\,\mathrm{Hz})\;[V^2/\mathrm{Hz}]$")
-            plt.ylabel("Inf")
+            plt.ylabel(r"$\mathrm{inF}$")
             _set_sparse_light_x_ticks(plt.gca())
             _maybe_title(
                 f"Gate : {GATE} - Flicker Noise – {titles[metric]}\n"
                 f"J={J/1e6:.0f} MHz, $\\alpha$={alpha}, Joffset={Joffset/1e3:.1f} kHz"
             )
-            plt.legend()
+            plt.legend(loc='best', fontsize=9)
             plt.grid(True, which="both", alpha=0.5)
+            plt.tick_params(axis='both', which='major', labelsize=12)
             save_figure(f"pink_noise_{titles[metric]}", save_dir)
             _maybe_show()
 
@@ -496,8 +594,8 @@ def plot_infidelity_vs_noise(
                 Sw_welch_stack.append(sw_i)
             Sw_welch = np.mean(np.asarray(Sw_welch_stack), axis=0)
 
-            plt.loglog(f[1:], Sw, label="White ideal PSD")
-            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label=f"White generated PSD (Welch)")
+            plt.loglog(f[1:], Sw, label="Ideal PSD")
+            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label=f"PSD (Welch)")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             _maybe_title(
@@ -522,8 +620,8 @@ def plot_infidelity_vs_noise(
                 Sp_welch_stack.append(sp_i)
             Sp_welch = np.mean(np.asarray(Sp_welch_stack), axis=0)
 
-            plt.loglog(f[1:], Sp, label="Flicker ideal PSD")
-            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label=f"Flicker generated PSD (Welch)")
+            plt.loglog(f[1:], Sp, label="Ideal PSD")
+            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label=f"PSD (Welch)")
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             _maybe_title(
@@ -538,25 +636,26 @@ def plot_infidelity_vs_noise(
 
         if thresholds_white_ok and thresholds_pink_ok:
             # Plot combined PSD (white + pink) at thresholds
-            plt.loglog(f[1:], Sw, label="White ideal PSD @thr")
-            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label="White generated PSD (Welch)")
-            plt.loglog(f[1:], Sp, label="Flicker ideal PSD @thr")
-            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label="Flicker generated PSD (Welch)")
+            plt.loglog(f[1:], Sw, label=r"$S(f)_\mathrm{white,id}$", color =plt.cm.tab10(0))
+            plt.loglog(f_welch_w[1:-1], Sw_welch[1:-1], "--", label=r"$S(f)_\mathrm{white, welch}$", color =plt.cm.tab10(1))
+            plt.loglog(f[1:], Sp, label=r"$S(f)_\mathrm{pink,id}$", color =plt.cm.tab10(2))
+            plt.loglog(f_welch_p[1:-1], Sp_welch[1:-1], "--", label=r"$S(f)_\mathrm{pink, welch}$", color =plt.cm.tab10(3))
             plt.xlabel("Frequency [Hz]")
             plt.ylabel(r"PSD [$V^2$/Hz]")
             _maybe_title(
                 f"Gate: {GATE} - PSD at thresholds – {titles[metric]}\n"
                 f"J={J/1e6:.0f} MHz, N0={N0_thr:.3e} V^2/Hz, S(1Hz)={S1Hz_thr:.3e} V^2/Hz, fs={fs/1e9:.2f} GHz"
             )
-            plt.legend()
+            plt.legend(loc='best', fontsize=9)
             plt.grid(True, which="both", alpha=0.5)
+            plt.tick_params(axis='both', which='major', labelsize=12)
             save_figure(f"PSD_threshold_combined_{titles[metric]}", save_dir)
             _maybe_show()
 
             # Plot combined histogram / distribution when both are available
             plt.figure()
-            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=r"$\sigma_{Flicker}$")
-            plt.hist(x_white*1e3, bins=50, alpha=0.3, label=r"$\sigma_{White}$")
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=r"$\mathrm{Noise}_{\mathrm{Flicker}}$", color =plt.cm.tab10(2))
+            plt.hist(x_white*1e3, bins=50, alpha=0.3, label=r"$\mathrm{Noise}_{\mathrm{White}}$", color =plt.cm.tab10(0))
 
             # Overlay system resolution
             resolution = dV
@@ -566,14 +665,15 @@ def plot_infidelity_vs_noise(
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
             _maybe_title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz, fs={fs/1e9:.2f} GHz")
-            plt.legend()
+            plt.legend(loc='best', fontsize=9)
+            plt.tick_params(axis='both', which='major', labelsize=12)
             save_figure(rf"Noise distributions vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
 
         if thresholds_pink_ok:
             # Plot histogram / distribution (pink only)
             plt.figure()
-            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=f"Flicker (S(1Hz)={S1Hz_thr:.2e})")
+            plt.hist(x_pink*1e3, bins=50, alpha=0.6, label=f"Flicker (S(1Hz)={S1Hz_thr:.2e})", color =plt.cm.tab10(2))
 
             # Overlay system resolution
             resolution = dV
@@ -583,14 +683,15 @@ def plot_infidelity_vs_noise(
             plt.xlabel("Noise value [mV]")
             plt.ylabel("Counts")
             _maybe_title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz, S(1Hz)={S1Hz_thr:.2e} V^2/Hz, fs={fs/1e9:.2f} GHz")
-            plt.legend()
+            plt.legend(loc='best', fontsize=9)
+            plt.tick_params(axis='both', which='major', labelsize=12)
             save_figure(rf"Noise distributions Flicker noise vs system resolution $\Delta V = {resolution*1e3:.2f}$ mV", save_dir)
             _maybe_show()
 
         if thresholds_white_ok:
             # Plot histogram / distribution (white only)
             plt.figure()
-            plt.hist(x_white*1e3, bins=50, alpha=0.6, label=r"$\sigma_{White}$")
+            plt.hist(x_white*1e3, bins=50, alpha=0.6, label=r"$\sigma_{\mathrm{White}}$", color =plt.cm.tab10(0))
 
             # Overlay system resolution
             resolution = dV
@@ -658,6 +759,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
     else:
         theta2 = angles.theta2
     
+    pulse_labels = {"square": "Square", "linear": "Linear", "RC": "RC"}
 
     # Load data
     data = np.load(data_file, allow_pickle=True)
@@ -682,7 +784,7 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
         infidelity_dicts[metric] = {pulse: np.clip(data[inf_key].item()[pulse], floor_value, None) for pulse in pulse_types}
         std_dicts[metric] = {pulse: np.abs(data[std_key].item()[pulse]) for pulse in pulse_types}
 
-    colors = {"square": None, "linear": None, "RC": None}
+    colors = {"square": plt.cm.tab10(0), "linear": plt.cm.tab10(1), "RC": plt.cm.tab10(2)}
     titles = {
         "": "evolution fidelity",
         "_state": "state fidelity",
@@ -724,25 +826,26 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
         for pulse in pulse_types:
             y = np.array(infidelity_dicts[metric][pulse])
             delta = np.array(std_dicts[metric][pulse])
-            plt.plot(sigma_jitters*1e12, y, label=f"{pulse}", color=colors.get(pulse))
+            plt.plot(sigma_jitters*1e12, y, label=f"{pulse_labels.get(pulse, pulse)}", color=colors.get(pulse), linewidth=2)
             current_color = plt.gca().lines[-1].get_color()
             plt.fill_between(sigma_jitters*1e12, y, y + 3*delta, color=current_color, alpha=0.15)
 
         # plt.plot(sigma_jitters*1e12, inF, linestyle="--", color="black", label="Ideal infidelity")
-        plt.plot(sigma_jitters*1e12, inF_first, linestyle="--", color="gray", label=r"$Inf_{ideal}$")
+        plt.plot(sigma_jitters*1e12, inF_first, linestyle="--", linewidth=2, color="gray", label=r"$\mathrm{inF}_{\mathrm{id}}$")
 
         title = f"Gate: {GATE} - Infidelity vs Jitter - {titles[metric]}, J = {J/1e6:.0f} MHz, alpha = {alpha}, Joffset = {Joffset/1e3} kHz"
 
         save_dir = Path(SAVE_DIR) / titles[metric]
         save_dir.mkdir(parents=True, exist_ok=True)
 
-        plt.axhline(1e-4, color="black", linestyle=":", label='Infidelity threshold')
-        plt.xlabel(r"$\sigma_{jitter}$ [ps]")
-        plt.ylabel("Inf")
+        plt.axhline(1e-4, color="black", linestyle=":", label=r'$\mathrm{inF}_{\mathrm{th}}$')
+        plt.xlabel(r"$\sigma_{\mathrm{jitter}}$ [ps]")
+        plt.ylabel(r"$\mathrm{inF}$")
         plt.yscale('log')
+        plt.tick_params(axis='both', which='major', labelsize=12)
         _set_sparse_light_x_ticks(plt.gca())
         _maybe_title(title)
-        plt.legend()
+        plt.legend(loc="best", fontsize=9)
         plt.grid(True, which="both", alpha=0.5)
         save_figure(title, save_dir)
         _maybe_show()
@@ -760,20 +863,21 @@ def plot_infidelity_vs_jitter(alpha, Joffset, N, dT, J, GATE, data_file, SAVE_DI
 
     # Plot histogram / distribution
     plt.figure()
-    plt.hist(jitter_noise, bins=50, alpha=0.6, label="Jitter noise")
+    plt.hist(jitter_noise, bins=50, alpha=0.6, label=r"$\mathrm{noise}_{\mathrm{jitter}}$")
 
     # Overlay system resolution
     resolution_t = dT
     plt.axvline(resolution_t*1e12, color='k', linestyle='--', label=r"$\Delta t$")
     plt.axvline(-resolution_t*1e12, color='k', linestyle='--')
 
-    plt.axvline(jitter_rms*1e12, color='g', linestyle='-.', label=r"$\sigma_{jitter}$")
+    plt.axvline(jitter_rms*1e12, color='g', linestyle='-.', label=r"$\sigma_\mathrm{jitter}$")
     plt.axvline(-jitter_rms*1e12, color='g', linestyle='-.')
 
-    plt.xlabel("Noise value [ps]")
-    plt.ylabel("Counts")
+    plt.xlabel("Noise value [ps]", fontsize = 12)
+    plt.ylabel("Counts", fontsize = 12)
     _maybe_title(f"Gate: {GATE} - Noise distributions vs system resolution\nJ={J/1e6:.0f} MHz")
-    plt.legend()
+    plt.legend(loc='best', fontsize=9)
+    plt.tick_params(axis='both', which='major', labelsize=12)
     save_figure(rf"Noise distributions Jitter noise vs system resolution $\Delta t = {resolution_t*1e12:.2f}$ ps", save_dir)
     _maybe_show()
 
@@ -787,7 +891,7 @@ def plot_infidelity_heatmaps(
     save_dir=None,
     save_prefix="Heatmap pulses",
     plot_individual=True,
-    threshold=1e-4,
+    threshold=1.5e-4,
 ):
     """
     Plot infidelity heatmaps for different pulse types with a shared colorbar,
@@ -830,10 +934,8 @@ def plot_infidelity_heatmaps(
     )
 
     # --- Combined figure ---
-    fig, axes = plt.subplots(
-        1, len(pulse_types),
-        gridspec_kw={'width_ratios': [1]*len(pulse_types), 'wspace': 0.5}
-    )
+    fig, axes = plt.subplots(1, len(pulse_types), figsize=_multi_panel_figsize(1,len(pulse_types)+1))
+       
 
     if len(pulse_types) == 1:
         axes = [axes]
@@ -854,14 +956,21 @@ def plot_infidelity_heatmaps(
             _maybe_title(f"{pulse_type.capitalize()} pulse", ax=ax, pad=10)
         else:
             _maybe_title(f"{pulse_type.capitalize()} pulse (J={J/1e6:.0f} MHz)", ax=ax, pad=10)
-        ax.set_xlabel(r"$\Delta V$ [mV]", labelpad=5)
-        ax.set_ylabel(r"$\Delta t$ [ps]", labelpad=5)
+        
+        # --- FIXES APPLIED HERE ---
+        # Increased fontsize to 14 to force a visible change.
+        # Adjusted labelpad to a negative value to bring the label closer.
+        ax.set_xlabel(r"$\Delta V$ [mV]", labelpad=0, fontsize=12)
+        ax.set_ylabel(r"$\Delta t$ [ps]", labelpad=-10, fontsize=12) 
+        
+        ax.tick_params(axis='both', which='major', labelsize=12)
+           
         # Note: resolution markers are shown in individual contour plots below
 
     cbar = fig.colorbar(
         im, ax=axes, orientation='vertical', fraction=0.05, pad=0.02
     )
-    cbar.set_label("log10(Infidelity)")
+    cbar.set_label(r"$\mathrm{log}_{10}\mathrm{(Inf)}$", fontsize=12)
 
     if save_dir is not None:
         save_figure(save_prefix, save_dir)
@@ -884,7 +993,7 @@ def plot_infidelity_heatmaps(
 
             plt.contour(
                 np.log10(infidelity_maps[pulse_type]),
-                levels=[-4],
+                levels=[np.log10(threshold)],
                 colors='red',
                 linewidths=2,
                 origin='lower',
@@ -912,37 +1021,38 @@ def plot_infidelity_heatmaps(
                     break
             handles = []
             labels = []
-            if dt_idx is not None:
-                dt_thr_ps = delta_t_list[dt_idx]*1e12
-                h1 = plt.scatter(delta_V_list[j0]*1e3, dt_thr_ps, marker='x', color='yellow')
-                handles.append(h1)
-                labels.append(fr"$\Delta t$ @ $\Delta V = 0$: {dt_thr_ps:.2f} ps")
-            if dV_idx is not None:
-                dV_thr_uV = delta_V_list[dV_idx]*1e6
-                h2 = plt.scatter(dV_thr_uV/1e3, delta_t_list[i0]*1e12, marker='x', color='cyan')
-                handles.append(h2)
-                labels.append(fr"$\Delta V$ @ $\Delta t = 0$: {dV_thr_uV:.2f} $\mu$V")
+            # if dt_idx is not None:
+            #     dt_thr_ps = delta_t_list[dt_idx]*1e12
+            #     h1 = plt.scatter(delta_V_list[j0]*1e3, dt_thr_ps, marker='x', color='yellow')
+            #     handles.append(h1)
+            #     labels.append(fr"$\Delta t$ @ $\Delta V = 0$")
+            # if dV_idx is not None:
+            #     dV_thr_uV = delta_V_list[dV_idx]*1e6
+            #     #h2 = plt.scatter(dV_thr_uV/1e3, delta_t_list[i0]*1e12, marker='x', color='cyan')
+            #     handles.append(h2)
+            #     labels.append(fr"$\Delta V$ @ $\Delta t = 0$")
 
             if J is None:
                 _maybe_title(f"{pulse_type.capitalize()} pulse")
             else:
                 _maybe_title(f"{pulse_type.capitalize()} pulse (J={J/1e6:.0f} MHz)")
-            plt.xlabel(r"$\Delta V$ [mV]")
-            plt.ylabel(r"$\Delta t$ [ps]")
-            plt.colorbar(im, label="log10(Infidelity)")
+            plt.xlabel(r"$\Delta V$ [mV]", fontsize=12)
+            plt.ylabel(r"$\Delta t$ [ps]", fontsize=12)
+            plt.colorbar(im, label=r"$\mathrm{log}_{10}\mathrm{(Inf)}$")
+            plt.tick_params(axis='both', which='major', labelsize=10)
             _maybe_grid(visible=False)
             if handles:
-                plt.legend(handles, labels, loc='upper right')
+                plt.legend(handles, labels, loc='best', fontsize=9, facecolor='white', edgecolor='white', framealpha=1.0)
 
             if save_dir is not None:
-                save_figure(f"{pulse_type.capitalize()} pulse", save_dir)
+                save_figure(f"{pulse_type.capitalize()} pulse", save_dir, ext = "pdf")
 
             _maybe_show()
 
 
 # ---- Gate thresholds from saved 1D heatmaps ----
 @with_science_style
-def plot_gate_thresholds_from_heatmaps(BASE_DIR: Path, J: float, threshold: float = 1e-4, alpha = None):
+def plot_gate_thresholds_from_heatmaps(BASE_DIR: Path, J: float, threshold: float = 1.5e-4, alpha = None):
     """Build and plot gate thresholds (dT, dV) for all gates using saved 1D heatmaps.
 
     - Reads each gate's heatmaps_1D.npz under BASE_DIR/test_gates/<gate>/**/Data
@@ -1023,25 +1133,27 @@ def plot_gate_thresholds_from_heatmaps(BASE_DIR: Path, J: float, threshold: floa
 
         # dT thresholds plot: three pulses together
         for pulse in pulses:
-            plt.plot(x, dt_thr_map[pulse], linestyle='-', label=pulse_labels.get(pulse))
-        plt.xticks(x, gates, rotation=45, ha="right")
-        plt.ylabel(r"$\Delta t$ threshold (ps)")
+            plt.plot(x, dt_thr_map[pulse], linestyle='-', linewidth=2, label=pulse_labels.get(pulse), color=plt.cm.tab10(pulses.index(pulse)))
+        plt.xticks(x, gates, rotation=75, ha="right", fontsize=8)
+        plt.ylabel(r"$\Delta t_{\mathrm{thr}}$ [ps]")
         _maybe_title(f"Gate dT thresholds at J={J/1e6:.0f} MHz (infidelity>{threshold:.1e})")
         _maybe_grid(alpha=0.3)
-        plt.legend()
-        dt_plot_path = plots_dir / f"gate_dt_thresholds_J={J/1e6:.0f}MHz.png"
+        plt.legend(loc='best', fontsize=12)
+        plt.yticks(fontsize=12)
+        dt_plot_path = plots_dir / f"gate_dt_thresholds_J={J/1e6:.0f}MHz.pdf"
         plt.savefig(dt_plot_path, dpi=300)
         plt.close()
 
         # dV thresholds plot: three pulses togethe
         for pulse in pulses:
-            plt.plot(x, dV_thr_map[pulse], linestyle='-', label=pulse_labels.get(pulse))
-        plt.xticks(x, gates, rotation=45, ha="right", fontsize=8)
-        plt.ylabel(r"$\Delta V$ threshold ($\mu V$)")
+            plt.plot(x, dV_thr_map[pulse], linestyle='-', linewidth=2, label=pulse_labels.get(pulse), color=plt.cm.tab10(pulses.index(pulse)))
+        plt.xticks(x, gates, rotation=75, ha="right", fontsize=8)
+        plt.ylabel(r"$\Delta V_{\mathrm{thr}}$ [$\mu$ V]")
         _maybe_title(f"Gate dV thresholds at J={J/1e6:.0f} MHz (infidelity>{threshold:.1e})")
         _maybe_grid(alpha=0.3)
-        plt.legend()
-        dV_plot_path = plots_dir / f"gate_dV_thresholds_J={J/1e6:.0f}MHz.png"
+        plt.legend(loc='best', fontsize=12)
+        dV_plot_path = plots_dir / f"gate_dV_thresholds_J={J/1e6:.0f}MHz.pdf"
+        plt.yticks(fontsize=12)
         plt.savefig(dV_plot_path, dpi=300)
         plt.close()
 
@@ -1053,7 +1165,7 @@ def plot_gate_thresholds_from_heatmaps(BASE_DIR: Path, J: float, threshold: floa
 
 # ---- RC thresholds across multiple J ----
 @with_science_style
-def plot_rc_thresholds_across_J(BASE_DIR: Path, J_list: list[float], threshold: float = 1e-4, alpha = None):
+def plot_rc_thresholds_across_J(BASE_DIR: Path, J_list: list[float], threshold: float = 1.5e-4, alpha = None):
     """Create cross-J line plots for RC pulse thresholds (dT, dV) over gates."""
     test_root = BASE_DIR / f"test_gates_{alpha}" if alpha is not None else BASE_DIR / "test_gates"
     plots_dir = test_root / "Plots"
@@ -1084,13 +1196,13 @@ def plot_rc_thresholds_across_J(BASE_DIR: Path, J_list: list[float], threshold: 
                         dt_val = delta_t_list[ii]
                         break
             y_dt.append(dt_val * 1e12 if dt_val is not None else np.nan)
-        plt.plot(x, y_dt, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz")
-    plt.xticks(x, gates, rotation=45, ha="right", fontsize=8)
-    plt.ylabel(r"$\Delta t$ threshold (ps)")
+        plt.plot(x, y_dt, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz", color=plt.cm.tab10(J_list.index(J)),linewidth=2)
+    plt.xticks(x, gates, rotation=75, ha="right", fontsize=8)
+    plt.ylabel(r"$\Delta t_\mathrm{thr}$(ps)")
     _maybe_title("Linear dT thresholds across J")
     _maybe_grid(alpha=0.3)
-    plt.legend()
-    rc_dt_path = plots_dir / "gate_linear_dt_thresholds_Js.png"
+    plt.legend(loc='best')
+    rc_dt_path = plots_dir / "gate_linear_dt_thresholds_Js.pdf"
     plt.savefig(rc_dt_path, dpi=300)
     plt.close()
 
@@ -1116,13 +1228,13 @@ def plot_rc_thresholds_across_J(BASE_DIR: Path, J_list: list[float], threshold: 
                         dV_val = delta_V_list[jj]
                         break
             y_dV.append(dV_val * 1e6 if dV_val is not None else np.nan)
-        plt.plot(x, y_dV, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz")
-    plt.xticks(x, gates, rotation=45, ha="right", fontsize=8)
-    plt.ylabel(r"$\Delta V$ threshold ($\mu V$)")
+        plt.plot(x, y_dV, marker='o', linestyle='-', label=f"J={J/1e6:.0f} MHz", color=plt.cm.tab10(J_list.index(J)),linewidth=2)
+    plt.xticks(x, gates, rotation=75, ha="right", fontsize=8)
+    plt.ylabel(r"$\Delta V_\mathrm{thr}(\mu V)$")
     _maybe_title("Linear dV thresholds across J")
     _maybe_grid(alpha=0.3)
-    plt.legend()
-    rc_dV_path = plots_dir / "gate_RC_dV_thresholds_Js.png"
+    plt.legend(loc='best')
+    rc_dV_path = plots_dir / "gate_RC_dV_thresholds_Js.pdf"
     plt.savefig(rc_dV_path, dpi=300)
     plt.close()
 
