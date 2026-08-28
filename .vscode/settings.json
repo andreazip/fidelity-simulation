@@ -1,0 +1,4 @@
+{
+    "python.defaultInterpreterPath": "${userHome}/miniforge3/envs/fidelity-simulation",
+    "python.terminal.activateEnvironment": true
+}
